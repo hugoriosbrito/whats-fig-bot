@@ -8,20 +8,22 @@ Mande no privado:
 
 - `!menu` mostra as opções
 - foto com a legenda `!fig` vira figurinha
-- responder uma foto com `!fig` também funciona
+- vídeo de até 10 segundos com `!fig` vira figurinha animada
+- responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem
 - `!resto` mostra quantas figurinhas ainda restam hoje
 - `1`, `2` e `3` repetem as opções do menu
 
-Em grupo o bot só responde quando é mencionado.
+No grupo, basta usar o comando. Não precisa mencionar o bot.
 
 ## Proteção contra ban
 
 - 15 figurinhas por dia, por número
 - 10 segundos entre uma figurinha e outra
 - no máximo 16 MB por arquivo
-- em grupo, só responde se for mencionado
+- vídeos entram numa fila e só um é convertido por vez
+- figurinha animada fica limitada a 500 KB
 - mensagem sem comando é ignorada
 - espera 0,8 segundo antes de cada resposta
 
@@ -44,3 +46,4 @@ Estas variáveis são opcionais:
 - `DAILY_LIMIT` padrão `15`
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
+- `MAX_VIDEO_SECONDS` padrão `10`
