@@ -29,14 +29,13 @@ O uso fica em `data/usage.json` e continua valendo depois de reiniciar.
 
 ## Deploy
 
-O `sillydev.conf` já aponta para Node.js 25 e `index.js`. O painel instala o `package.json` sozinho.
+O `sillydev.conf` já aponta para Node.js 25 e `index.js`. Se a instalação cair por instabilidade da rede, o `index.js` tenta novamente até quatro vezes antes de abrir o bot.
 
-1. Envie este código para `main`.
-2. No painel, em Startup, crie `PHONE_NUMBER` com o número em dígitos, por exemplo `5511999998888`.
-3. Inicie o servidor e copie o código que aparece no console.
-4. No WhatsApp: Aparelhos conectados, Conectar com número de telefone.
+1. Faça o deploy da branch `main`.
+2. Abra o console do painel.
+3. Escaneie o QR code com WhatsApp, em Aparelhos conectados.
 
-A pasta `session/` fica no disco do servidor e não entra no Git. Não apague ela, senão é preciso parear de novo.
+A pasta `session/` fica no disco do servidor e não entra no Git. Não apague ela, senão é preciso escanear o QR novamente.
 
 ## Ajustes
 
@@ -45,4 +44,3 @@ Estas variáveis são opcionais:
 - `DAILY_LIMIT` padrão `15`
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
-- `PHONE_NUMBER` número usado no pareamento
