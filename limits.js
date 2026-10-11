@@ -1,16 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
+import { hasDatabase, readUsage, writeUsage, today } from "./db.js";
 
 // Controle de uso diário por pessoa, salvo em disco (data/usage.json).
 // Sobrevive a restart/redeploy — essencial no free tier.
 // Formato: { "5511999998888": { day: "2026-10-11", count: 3, lastAt: 1728... } }
 
 const file = path.join(config.dataDir, "usage.json");
-
-function today() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-}
 
 async function load() {
   try {
@@ -34,10 +31,15 @@ function senderKey(jid) {
 }
 
 // Só a cota diária. Não olha o intervalo entre figurinhas.
+async function entryFor(key) {
+  if (hasDatabase()) return readUsage(key);
+  const db = await load();
+  return db[key] || null;
+}
+
 export async function checkQuota(jid) {
   const key = senderKey(jid);
-  const db = await load();
-  const entry = db[key];
+  const entry = await entryFor(key);
   const day = today();
   const used = entry && entry.day === day ? entry.count : 0;
 
@@ -50,8 +52,7 @@ export async function checkQuota(jid) {
 // Intervalo mínimo entre figurinhas da mesma pessoa. Independente da cota.
 export async function checkCooldown(jid) {
   const key = senderKey(jid);
-  const db = await load();
-  const entry = db[key];
+  const entry = await entryFor(key);
   if (!entry?.lastAt) return { ok: true };
 
   const elapsed = (Date.now() - entry.lastAt) / 1000;
@@ -64,10 +65,16 @@ export async function checkCooldown(jid) {
 // Registra 1 figurinha gerada para a pessoa.
 export async function registerUse(jid) {
   const key = senderKey(jid);
-  const db = await load();
   const day = today();
-  const prev = db[key] && db[key].day === day ? db[key].count : 0;
-  db[key] = { day, count: prev + 1, lastAt: Date.now() };
-  await save(db);
-  return { used: prev + 1, limit: config.dailyLimit };
+  const current = await entryFor(key);
+  const prev = current && current.day === day ? current.count : 0;
+  const next = { day, count: prev + 1, lastAt: Date.now() };
+  if (hasDatabase()) {
+    await writeUsage(key, next.count, next.lastAt);
+  } else {
+    const db = await load();
+    db[key] = next;
+    await save(db);
+  }
+  return { used: next.count, limit: config.dailyLimit };
 }

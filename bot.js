@@ -13,6 +13,8 @@ import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, registerUse } from "./limits.js";
 import { imageToSticker, videoToSticker, assertSizeOk, cleanup } from "./sticker.js";
+import { hasDatabase, setupDatabase } from "./db.js";
+import { useMysqlAuthState } from "./auth-store.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -220,7 +222,10 @@ async function handleIncoming(sock, msg) {
 }
 
 async function start() {
-  const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
+  const auth = hasDatabase()
+    ? await useMysqlAuthState()
+    : await useMultiFileAuthState(config.sessionDir);
+  const { state, saveCreds } = auth;
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     version,

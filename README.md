@@ -27,7 +27,7 @@ No grupo, basta usar o comando. Não precisa mencionar o bot.
 - mensagem sem comando é ignorada
 - espera 0,8 segundo antes de cada resposta
 
-O uso fica em `data/usage.json` e continua valendo depois de reiniciar.
+Com `DATABASE_URL` configurada, a cota e a sessão do WhatsApp ficam no MySQL. Assim, um restart não zera o limite nem pede outro QR. Sem essa variável, o bot usa arquivos locais.
 
 ## Deploy
 
@@ -47,3 +47,4 @@ Estas variáveis são opcionais:
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
 - `MAX_VIDEO_SECONDS` padrão `10`
+- `DATABASE_URL` conexão MySQL para sessão e cota diária

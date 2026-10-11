@@ -1,6 +1,7 @@
 # ── segredos / credenciais ──
 node_modules/
 .env
+.env.*
 
 # ── sessão do WhatsApp (é login: NÃO commitar, mas persiste no servidor) ──
 session/
