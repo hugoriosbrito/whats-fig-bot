@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
-const startupArgs = process.argv.slice(2);
-if (startupArgs.length >= 5 && !process.env.DATABASE_URL) {
-  const [host, port, database, user, password] = startupArgs;
-  process.env.DATABASE_URL = `mysql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+const passwordArg = process.argv.slice(2).find((arg) => /^[A-Za-z0-9]+$/.test(arg));
+if (passwordArg && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = `mysql://u4062_ihkdsmvd:${encodeURIComponent(passwordArg)}@87.106.101.66:3306/figbo_db_8cbxwb`;
 }
 
 const require = createRequire(import.meta.url);
