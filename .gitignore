@@ -1,0 +1,17 @@
+# ── segredos / credenciais ──
+node_modules/
+.env
+
+# ── sessão do WhatsApp (é login: NÃO commitar, mas persiste no servidor) ──
+session/
+auth/
+
+# ── dados locais de uso + temporários ──
+data/
+tmp/
+*.tmp
+
+# ── sistema ──
+.DS_Store
+Thumbs.db
+npm-debug.log*
