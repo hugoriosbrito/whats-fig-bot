@@ -206,7 +206,7 @@ async function handleIncoming(sock, msg) {
       await sendText(sock, chat, text, msg);
     } else if (["fig", "s", "sticker"].includes(cmd)) {
       const requested = (args[0] || "").toLowerCase();
-      const mode = ["fill", "stretch"].includes(requested) ? requested : "fit";
+      const mode = ["fit", "fill", "stretch"].includes(requested) ? requested : "fill";
       await handleSticker(sock, msg, mode);
     } else if (cmd === "1") {
       await sendText(sock, chat, "Beleza. Manda a foto ou o vídeo com a legenda *!fig*.", msg);

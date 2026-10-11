@@ -34,11 +34,11 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
 }
 
 function videoFilter(mode) {
-  if (mode === "fill") {
-    return "fps=10,scale=512:512:force_original_aspect_ratio=increase,crop=512:512";
+  if (mode === "fit") {
+    return "fps=10,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000";
   }
   if (mode === "stretch") return "fps=10,scale=512:512";
-  return "fps=10,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000";
+  return "fps=10,scale=512:512:force_original_aspect_ratio=increase,crop=512:512";
 }
 
 function runFfmpeg(inputPath, out, mode) {
