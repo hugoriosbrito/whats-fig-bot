@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
+const databaseArg = process.argv.find((arg) => arg.startsWith("mysql://"));
+if (databaseArg) process.env.DATABASE_URL = databaseArg;
+
 const require = createRequire(import.meta.url);
 const required = ["@whiskeysockets/baileys", "sharp", "pino", "qrcode-terminal", "mysql2"];
 
