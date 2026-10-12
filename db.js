@@ -11,17 +11,19 @@ function database() {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL não está configurada.");
   }
-  pool ??= mysql.createPool({
-    uri: process.env.DATABASE_URL,
-    waitForConnections: true,
-    connectionLimit: 4,
-    connectTimeout: 10000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10000,
-    maxIdle: 1,
-    idleTimeout: 20000,
-  });
-  pool.on("error", () => {});
+  if (!pool) {
+    pool = mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      waitForConnections: true,
+      connectionLimit: 4,
+      connectTimeout: 10000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      maxIdle: 1,
+      idleTimeout: 20000,
+    });
+    pool.on("error", () => {});
+  }
   return pool;
 }
 
