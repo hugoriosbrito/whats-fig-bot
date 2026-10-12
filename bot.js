@@ -235,7 +235,9 @@ async function start() {
     cachedGroupMetadata: async () => undefined,
   });
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", () => {
+    saveCreds().catch((error) => log.error({ err: error }, "falha temporária ao salvar a sessão"));
+  });
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       qrcode.generate(qr, { small: true });
@@ -255,7 +257,16 @@ async function start() {
   log.info("FigBot iniciado. Aguardando conexão.");
 }
 
-start().catch((error) => {
-  log.error({ err: error }, "falha fatal");
-  process.exit(1);
-});
+process.on("unhandledRejection", (error) => log.error({ err: error }, "falha isolada"));
+process.on("uncaughtException", (error) => log.error({ err: error }, "falha isolada"));
+
+async function run() {
+  try {
+    await start();
+  } catch (error) {
+    log.error({ err: error }, "falha ao iniciar; tentando novamente");
+    setTimeout(run, 5000);
+  }
+}
+
+run();
