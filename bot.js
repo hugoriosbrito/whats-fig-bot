@@ -173,6 +173,9 @@ async function handleSticker(sock, msg, mode) {
         ? await videoToSticker(input, { mode })
         : await imageToSticker(input, { mode });
       const webp = await fs.readFile(output);
+      if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
+        groupCache.set(chat, await sock.groupMetadata(chat));
+      }
       await sock.sendMessage(chat, { sticker: webp }, { quoted: msg });
       const usage = await registerUse(sender);
       log.info({ sender, used: usage.used, video: isVideo }, "figurinha enviada");
@@ -228,6 +231,7 @@ async function handleIncoming(sock, msg) {
 
 let activeSock;
 let reconnectTimer;
+const groupCache = new Map();
 
 async function start() {
   clearTimeout(reconnectTimer);
@@ -242,11 +246,17 @@ async function start() {
     auth: state,
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
-    cachedGroupMetadata: async () => undefined,
+    cachedGroupMetadata: async (jid) => groupCache.get(jid),
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 20000,
   });
   activeSock = sock;
+  sock.ev.on("groups.update", (updates) => {
+    for (const update of updates) {
+      if (update.id && update.participants) groupCache.set(update.id, update);
+    }
+  });
+  sock.ev.on("group-participants.update", ({ id }) => groupCache.delete(id));
 
   sock.ev.on("creds.update", () => {
     saveCreds().catch((error) => log.error({ err: error }, "falha temporária ao salvar a sessão"));
