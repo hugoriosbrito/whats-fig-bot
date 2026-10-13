@@ -42,18 +42,18 @@ function videoFilter(mode) {
   return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512`;
 }
 
-function runFfmpeg(inputPath, out, mode) {
+function runFfmpeg(inputPath, out, mode, fps) {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", [
       "-y",
       "-i", inputPath,
       "-t", String(config.maxVideoSeconds),
-      "-vf", videoFilter(mode),
+      "-vf", videoFilter(mode).replace("fps=10", `fps=${fps}`),
       "-c:v", "libwebp_anim",
       "-loop", "0",
       "-an",
-      "-q:v", "50",
-      "-compression_level", "4",
+      "-q:v", "55",
+      "-compression_level", "6",
       out,
     ], { stdio: ["ignore", "ignore", "ignore"] });
     const timer = setTimeout(() => {
@@ -75,7 +75,7 @@ function runFfmpeg(inputPath, out, mode) {
       }
       const stat = await fs.stat(out);
       if (stat.size > 500 * 1024) {
-        reject(new Error("O vídeo ficou acima de 500 KB. Manda um trecho mais curto."));
+        reject(Object.assign(new Error("Muito grande."), { code: "STICKER_TOO_LARGE" }));
       } else {
         resolve(out);
       }
@@ -85,11 +85,18 @@ function runFfmpeg(inputPath, out, mode) {
 
 // Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.
 export async function videoToSticker(inputPath, { mode = "fit" } = {}) {
-  const out = path.join(
-    os.tmpdir(),
-    `figvid-${Date.now()}-${Math.floor(Math.random() * 1e6)}.webp`
-  );
-  return runFfmpeg(inputPath, out, mode);
+  for (const fps of [10, 8, 6]) {
+    const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${fps}.webp`);
+    try {
+      return await runFfmpeg(inputPath, out, mode, fps);
+    } catch (error) {
+      await cleanup(out);
+      if (error.code !== "STICKER_TOO_LARGE" || fps === 6) {
+        if (error.code === "STICKER_TOO_LARGE") throw new Error("O vídeo ficou acima de 500 KB. Manda um trecho mais curto.");
+        throw error;
+      }
+    }
+  }
 }
 
 // Valida o tamanho antes de baixar: protege a RAM de 256MB do free tier.

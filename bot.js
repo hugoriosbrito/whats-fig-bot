@@ -105,10 +105,15 @@ let queueSize = 0;
 function enqueue(task) {
   const position = queueSize + 1;
   queueSize += 1;
-  const run = queue.then(task, task);
-  queue = run.finally(() => {
+  let rejectRun;
+  const run = new Promise((resolve, reject) => {
+    rejectRun = reject;
+    queue = queue.then(task).then(resolve, reject);
+  });
+  queue = queue.catch(() => {}).finally(() => {
     queueSize -= 1;
   });
+  run.cancel = rejectRun;
   return { position, run };
 }
 
@@ -221,7 +226,12 @@ async function handleIncoming(sock, msg) {
   }
 }
 
+let activeSock;
+let reconnectTimer;
+
 async function start() {
+  clearTimeout(reconnectTimer);
+  activeSock?.end(undefined);
   const auth = hasDatabase()
     ? await useMysqlAuthState()
     : await useMultiFileAuthState(config.sessionDir);
@@ -233,7 +243,10 @@ async function start() {
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
     cachedGroupMetadata: async () => undefined,
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 20000,
   });
+  activeSock = sock;
 
   sock.ev.on("creds.update", () => {
     saveCreds().catch((error) => log.error({ err: error }, "falha temporária ao salvar a sessão"));
@@ -248,7 +261,7 @@ async function start() {
       const code = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = code !== DisconnectReason.loggedOut;
       log.warn({ code }, shouldReconnect ? "Conexão caiu. Reconectando." : "Sessão deslogada. Apague session/ e pareie de novo.");
-      if (shouldReconnect) setTimeout(start, 5000);
+      if (shouldReconnect && sock === activeSock) reconnectTimer = setTimeout(start, 5000);
     }
   });
   sock.ev.on("messages.upsert", ({ messages }) => {
@@ -258,7 +271,6 @@ async function start() {
 }
 
 process.on("unhandledRejection", (error) => log.error({ err: error }, "falha isolada"));
-process.on("uncaughtException", (error) => log.error({ err: error }, "falha isolada"));
 
 async function run() {
   try {
