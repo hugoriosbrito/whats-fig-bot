@@ -15,7 +15,7 @@ function database() {
     pool = mysql.createPool({
       uri: process.env.DATABASE_URL,
       waitForConnections: true,
-      connectionLimit: 4,
+      connectionLimit: 1,
       connectTimeout: 10000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,

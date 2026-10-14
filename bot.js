@@ -254,6 +254,7 @@ async function start() {
     cachedGroupMetadata: async (jid) => groupCache.get(jid),
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 20000,
+    shouldSyncHistoryMessage: () => false,
   });
   activeSock = sock;
   sock.ev.on("groups.update", (updates) => {
@@ -263,8 +264,12 @@ async function start() {
   });
   sock.ev.on("group-participants.update", ({ id }) => groupCache.delete(id));
 
+  let credsTimer;
   sock.ev.on("creds.update", () => {
-    saveCreds().catch((error) => log.error({ err: error }, "falha temporária ao salvar a sessão"));
+    clearTimeout(credsTimer);
+    credsTimer = setTimeout(() => {
+      saveCreds().catch((error) => log.error({ err: error }, "falha temporária ao salvar a sessão"));
+    }, 3000);
   });
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
     if (qr) {

@@ -13,7 +13,11 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
     `fig-${Date.now()}-${Math.floor(Math.random() * 1e6)}.webp`
   );
 
-  let pipeline = sharp(inputPath, { animated: false }).rotate(); // respeita EXIF
+  let pipeline = sharp(inputPath, {
+    animated: false,
+    limitInputPixels: 16_777_216,
+    sequentialRead: true,
+  }).rotate();
 
   if (mode === "fill") {
     // Preenche tudo (corta as bordas que sobrarem)
@@ -47,6 +51,8 @@ function runFfmpeg(inputPath, out, mode, fps) {
     const ffmpeg = spawn("ffmpeg", [
       "-y",
       "-threads", "1",
+      "-filter_threads", "1",
+      "-an",
       "-i", inputPath,
       "-t", String(Math.min(config.maxVideoSeconds, 6)),
       "-vf", videoFilter(mode, fps),
@@ -86,7 +92,7 @@ function runFfmpeg(inputPath, out, mode, fps) {
 
 // Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.
 export async function videoToSticker(inputPath, { mode = "fit" } = {}) {
-  for (const fps of [10, 8, 6]) {
+  for (const fps of [8, 6]) {
     const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${fps}.webp`);
     try {
       return await runFfmpeg(inputPath, out, mode, fps);
