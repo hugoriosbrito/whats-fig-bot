@@ -231,10 +231,15 @@ async function handleIncoming(sock, msg) {
 
 let activeSock;
 let reconnectTimer;
+let reconnectDelay = 15000;
+let starting = false;
 const groupCache = new Map();
 
 async function start() {
+  if (starting) return;
+  starting = true;
   clearTimeout(reconnectTimer);
+  try {
   activeSock?.end(undefined);
   const auth = hasDatabase()
     ? await useMysqlAuthState()
@@ -266,18 +271,28 @@ async function start() {
       qrcode.generate(qr, { small: true });
       log.info("Escaneie o QR acima com o WhatsApp, em Aparelhos conectados.");
     }
-    if (connection === "open") log.info("Conectado ao WhatsApp.");
+    if (connection === "open") {
+      reconnectDelay = 15000;
+      log.info("Conectado ao WhatsApp.");
+    }
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = code !== DisconnectReason.loggedOut;
       log.warn({ code }, shouldReconnect ? "Conexão caiu. Reconectando." : "Sessão deslogada. Apague session/ e pareie de novo.");
-      if (shouldReconnect && sock === activeSock) reconnectTimer = setTimeout(start, 5000);
+      if (shouldReconnect && sock === activeSock) {
+        reconnectTimer = setTimeout(start, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 120000);
+      }
     }
   });
   sock.ev.on("messages.upsert", ({ messages }) => {
+    if (sock !== activeSock) return;
     for (const message of messages) handleIncoming(sock, message);
   });
   log.info("FigBot iniciado. Aguardando conexão.");
+  } finally {
+    starting = false;
+  }
 }
 
 process.on("unhandledRejection", (error) => log.error({ err: error }, "falha isolada"));
