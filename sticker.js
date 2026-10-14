@@ -33,8 +33,8 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
   return out;
 }
 
-function videoFilter(mode) {
-  const upright = "fps=10,scale=iw*sar:ih,setsar=1";
+function videoFilter(mode, fps) {
+  const upright = `fps=${fps},scale='min(512,iw)':-2,setsar=1`;
   if (mode === "fit") {
     return `${upright},scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
   }
@@ -46,20 +46,21 @@ function runFfmpeg(inputPath, out, mode, fps) {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", [
       "-y",
+      "-threads", "1",
       "-i", inputPath,
-      "-t", String(config.maxVideoSeconds),
-      "-vf", videoFilter(mode).replace("fps=10", `fps=${fps}`),
+      "-t", String(Math.min(config.maxVideoSeconds, 6)),
+      "-vf", videoFilter(mode, fps),
       "-c:v", "libwebp_anim",
       "-loop", "0",
       "-an",
-      "-q:v", "55",
-      "-compression_level", "6",
+      "-q:v", "60",
+      "-compression_level", "2",
       out,
     ], { stdio: ["ignore", "ignore", "ignore"] });
     const timer = setTimeout(() => {
       ffmpeg.kill();
-      reject(new Error("A conversão do vídeo demorou demais."));
-    }, 60_000);
+      reject(Object.assign(new Error("A conversão do vídeo demorou demais. Manda um vídeo mais curto."), { code: "STICKER_TIMEOUT" }));
+    }, 180_000);
 
     ffmpeg.on("error", (error) => {
       clearTimeout(timer);
@@ -91,10 +92,8 @@ export async function videoToSticker(inputPath, { mode = "fit" } = {}) {
       return await runFfmpeg(inputPath, out, mode, fps);
     } catch (error) {
       await cleanup(out);
-      if (error.code !== "STICKER_TOO_LARGE" || fps === 6) {
-        if (error.code === "STICKER_TOO_LARGE") throw new Error("O vídeo ficou acima de 500 KB. Manda um trecho mais curto.");
-        throw error;
-      }
+      if (error.code === "STICKER_TIMEOUT" || fps === 6) throw error;
+      if (error.code !== "STICKER_TOO_LARGE") throw error;
     }
   }
 }
