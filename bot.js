@@ -15,6 +15,8 @@ import { checkQuota, checkCooldown, registerUse } from "./limits.js";
 import { imageToSticker, videoToSticker, assertSizeOk, cleanup } from "./sticker.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
+import { synthesize, ttsEnabled, TtsError } from "./fish.js";
+import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -29,7 +31,10 @@ Mande *!resto* para ver quantas restam hoje.
 O máximo é ${config.dailyLimit} por dia.
 
 *3* Ajuda
-Mande *!ajuda*.`;
+Mande *!ajuda*.
+
+*4* Falar um texto
+Mande *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`;
 
 const HELP = `Como funciona:
 
@@ -37,6 +42,8 @@ const HELP = `Como funciona:
 - Vídeo de até ${config.maxVideoSeconds}s com *!fig* vira figurinha animada.
 - *!fig fill* preenche e *!fig stretch* estica.
 - Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeconds}s entre cada uma.
+- *!tts seu texto* vira uma mensagem de voz (até ${config.ttsMaxChars} caracteres).
+- Cada número tem ${config.ttsDailyLimit} áudios por dia e ${config.ttsCooldownSeconds}s entre cada um.
 - Funciona no privado e no grupo. Sem comando, eu fico quieto.`;
 
 function unwrapMessage(message) {
@@ -62,8 +69,11 @@ function extractBody(msg) {
 
 function parseCommand(body) {
   if (!body.startsWith(config.prefix)) return null;
-  const [raw, ...args] = body.slice(config.prefix.length).trim().split(/\s+/);
-  return { cmd: (raw || "").toLowerCase(), args };
+  const raw = body.slice(config.prefix.length);
+  const [cmd, ...args] = raw.trim().split(/\s+/);
+  // Texto original depois do comando, com quebras de linha preservadas
+  const rest = raw.trim().slice(cmd.length).replace(/^\s+/, "");
+  return { cmd: (cmd || "").toLowerCase(), args, rest };
 }
 
 function senderOf(msg) {
@@ -194,6 +204,77 @@ async function handleSticker(sock, msg, mode) {
   }
 }
 
+// Gera o áudio no formato do WhatsApp. O caminho normal é MP3 + FFmpeg;
+// sem FFmpeg no servidor, pede Opus direto à Fish Audio.
+let ffmpegMissing = false;
+
+async function speak(text) {
+  if (!ffmpegMissing) {
+    try {
+      const { audio: mp3 } = await synthesize(text, { format: "mp3" });
+      return await prepareVoice(mp3);
+    } catch (error) {
+      if (!/FFmpeg/.test(error.message)) throw error;
+      ffmpegMissing = true;
+      log.warn("FFmpeg indisponível; usando o Opus nativo da Fish Audio.");
+    }
+  }
+  const { audio: opus } = await synthesize(text, { format: "opus" });
+  return prepareVoiceFromOpus(opus);
+}
+
+async function handleVoice(sock, msg, text) {
+  const chat = msg.key.remoteJid;
+  const sender = senderOf(msg);
+
+  if (!ttsEnabled()) {
+    await sendText(sock, chat, "O comando de voz está desligado: falta configurar *FISH_API_KEY* no servidor.", msg);
+    return;
+  }
+
+  const check = validateTtsText(text);
+  if (!check.ok) {
+    await sendText(sock, chat, check.message, msg);
+    return;
+  }
+
+  const quota = await checkQuota(sender, "tts");
+  if (!quota.ok) {
+    await sendText(sock, chat, `Você usou seus *${quota.used}/${quota.limit}* mensagens de voz de hoje. Volte amanhã.`, msg);
+    return;
+  }
+  const pace = await checkCooldown(sender, "tts");
+  if (!pace.ok) {
+    await sendText(sock, chat, `Calma aí. Aguarde *${pace.wait}s* antes da próxima.`, msg);
+    return;
+  }
+
+  // Entra na mesma fila das figurinhas: o servidor tem pouca CPU e RAM.
+  const { position, run } = enqueue(async () => {
+    const started = Date.now();
+    const { audio, seconds } = await speak(text);
+    await sock.sendMessage(chat, { audio, ptt: true, mimetype: "audio/ogg; codecs=opus", seconds }, { quoted: msg });
+    const usage = await registerUse(sender, "tts");
+    log.info(
+      { sender, chars: text.length, seconds, used: usage.used, ms: Date.now() - started },
+      "mensagem de voz enviada"
+    );
+  });
+
+  const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
+  await sendText(sock, chat, `Gravando seu áudio (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+  try {
+    await run;
+  } catch (error) {
+    log.error({ err: error }, "falha ao gerar áudio");
+    const friendly =
+      error instanceof TtsError && error.reason === "disabled"
+        ? "O comando de voz está desligado: falta configurar *FISH_API_KEY* no servidor."
+        : error.message;
+    await sendText(sock, chat, `Não consegui gerar o áudio: ${friendly}`, msg);
+  }
+}
+
 async function handleIncoming(sock, msg) {
   try {
     if (!msg.message || msg.key.fromMe || msg.key.remoteJid === "status@broadcast") return;
@@ -201,28 +282,42 @@ async function handleIncoming(sock, msg) {
     const parsed = parseCommand(extractBody(msg));
     if (!parsed) return;
 
-    const { cmd, args } = parsed;
+    const { cmd, args, rest } = parsed;
     if (["menu", "start", "oi", "ola", "olá"].includes(cmd)) {
       await sendText(sock, chat, MENU, msg);
     } else if (cmd === "ajuda" || cmd === "help") {
       await sendText(sock, chat, HELP, msg);
     } else if (["resto", "limite", "cota"].includes(cmd)) {
-      const quota = await checkQuota(senderOf(msg));
-      const text = quota.ok
-        ? `Você usou *${quota.used}/${quota.limit}* hoje. Restam *${quota.limit - quota.used}*.`
-        : `Limite de hoje atingido: *${quota.used}/${quota.limit}*. Volte amanhã.`;
-      await sendText(sock, chat, text, msg);
+      const sticker = await checkQuota(senderOf(msg), "fig");
+      const voice = await checkQuota(senderOf(msg), "tts");
+      const stickerLine = sticker.ok
+        ? `Figurinhas: restam *${sticker.limit - sticker.used}* de ${sticker.limit}.`
+        : `Figurinhas: limite de hoje atingido (${sticker.used}/${sticker.limit}).`;
+      const voiceLine = voice.ok
+        ? `Áudios: restam *${voice.limit - voice.used}* de ${voice.limit}.`
+        : `Áudios: limite de hoje atingido (${voice.used}/${voice.limit}).`;
+      await sendText(sock, chat, `${stickerLine}\n${voiceLine}`, msg);
     } else if (["fig", "s", "sticker"].includes(cmd)) {
       const requested = (args[0] || "").toLowerCase();
       const mode = ["fit", "fill", "stretch"].includes(requested) ? requested : "fill";
       await handleSticker(sock, msg, mode);
+    } else if (["tts", "fala", "voz", "audio", "áudio"].includes(cmd)) {
+      await handleVoice(sock, msg, ttsTextFrom([rest]));
     } else if (cmd === "1") {
       await sendText(sock, chat, "Beleza. Manda a foto ou o vídeo com a legenda *!fig*.", msg);
     } else if (cmd === "2") {
-      const quota = await checkQuota(senderOf(msg));
-      await sendText(sock, chat, `Sua cota: *${quota.used || 0}/${quota.limit}* usadas hoje.`, msg);
+      const sticker = await checkQuota(senderOf(msg), "fig");
+      const voice = await checkQuota(senderOf(msg), "tts");
+      await sendText(
+        sock,
+        chat,
+        `Figurinhas: *${sticker.used || 0}/${sticker.limit}* hoje.\nÁudios: *${voice.used || 0}/${voice.limit}* hoje.`,
+        msg
+      );
     } else if (cmd === "3") {
       await sendText(sock, chat, HELP, msg);
+    } else if (cmd === "4") {
+      await sendText(sock, chat, `Manda *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`, msg);
     }
   } catch (error) {
     log.error({ err: error }, "erro ao processar mensagem");

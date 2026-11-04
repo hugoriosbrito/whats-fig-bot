@@ -6,6 +6,9 @@ import { hasDatabase, readUsage, writeUsage, today } from "./db.js";
 // Controle de uso diário por pessoa, salvo em disco (data/usage.json).
 // Sobrevive a restart/redeploy — essencial no free tier.
 // Formato: { "5511999998888": { day: "2026-10-11", count: 3, lastAt: 1728... } }
+//
+// Cada recurso tem seu próprio contador. "fig" usa a chave antiga (só o número)
+// para não perder o histórico; os demais ganham prefixo, ex: "tts:5511999998888".
 
 const file = path.join(config.dataDir, "usage.json");
 
@@ -30,41 +33,51 @@ function senderKey(jid) {
   return String(jid || "").split("@")[0].split(":")[0];
 }
 
-// Só a cota diária. Não olha o intervalo entre figurinhas.
+function usageKey(jid, kind) {
+  const phone = senderKey(jid);
+  return kind === "fig" ? phone : `${kind}:${phone}`;
+}
+
+const quotaOf = (kind) => (kind === "tts" ? config.ttsDailyLimit : config.dailyLimit);
+const cooldownOf = (kind) => (kind === "tts" ? config.ttsCooldownSeconds : config.cooldownSeconds);
+
+// Só a cota diária. Não olha o intervalo entre usos.
 async function entryFor(key) {
   if (hasDatabase()) return readUsage(key);
   const db = await load();
   return db[key] || null;
 }
 
-export async function checkQuota(jid) {
-  const key = senderKey(jid);
+export async function checkQuota(jid, kind = "fig") {
+  const key = usageKey(jid, kind);
+  const limit = quotaOf(kind);
   const entry = await entryFor(key);
   const day = today();
   const used = entry && entry.day === day ? entry.count : 0;
 
-  if (used >= config.dailyLimit) {
-    return { ok: false, reason: "limit", used, limit: config.dailyLimit };
+  if (used >= limit) {
+    return { ok: false, reason: "limit", used, limit };
   }
-  return { ok: true, used, limit: config.dailyLimit };
+  return { ok: true, used, limit };
 }
 
-// Intervalo mínimo entre figurinhas da mesma pessoa. Independente da cota.
-export async function checkCooldown(jid) {
-  const key = senderKey(jid);
+// Intervalo mínimo entre usos da mesma pessoa. Independente da cota.
+export async function checkCooldown(jid, kind = "fig") {
+  const key = usageKey(jid, kind);
   const entry = await entryFor(key);
   if (!entry?.lastAt) return { ok: true };
 
+  const cooldown = cooldownOf(kind);
   const elapsed = (Date.now() - entry.lastAt) / 1000;
-  if (elapsed < config.cooldownSeconds) {
-    return { ok: false, wait: Math.ceil(config.cooldownSeconds - elapsed) };
+  if (elapsed < cooldown) {
+    return { ok: false, wait: Math.ceil(cooldown - elapsed) };
   }
   return { ok: true };
 }
 
-// Registra 1 figurinha gerada para a pessoa.
-export async function registerUse(jid) {
-  const key = senderKey(jid);
+// Registra 1 uso (figurinha ou áudio) para a pessoa.
+export async function registerUse(jid, kind = "fig") {
+  const key = usageKey(jid, kind);
   const day = today();
   const current = await entryFor(key);
   const prev = current && current.day === day ? current.count : 0;
@@ -76,5 +89,5 @@ export async function registerUse(jid) {
     db[key] = next;
     await save(db);
   }
-  return { used: next.count, limit: config.dailyLimit };
+  return { used: next.count, limit: quotaOf(kind) };
 }

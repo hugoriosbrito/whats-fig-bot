@@ -12,15 +12,42 @@ Mande no privado:
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem
-- `!resto` mostra quantas figurinhas ainda restam hoje
-- `1`, `2` e `3` repetem as opções do menu
+- `!tts seu texto` vira uma mensagem de voz (Fish Audio, modelo gratuito S2.1 Pro)
+- `!resto` mostra quantas figurinhas e áudios ainda restam hoje
+- `1`, `2`, `3` e `4` repetem as opções do menu
 
 No grupo, basta usar o comando. Não precisa mencionar o bot.
+
+## Voz (Fish Audio)
+
+O comando `!tts` usa a API da Fish Audio com o modelo `s2.1-pro-free`, que funciona sem crédito na conta.
+
+1. Crie a conta em [fish.audio](https://fish.audio) e clique em **Get Started → Get your API key**.
+2. Copie a chave: ela aparece uma única vez.
+3. No servidor, crie um arquivo `.env` na raiz do projeto (pelo File manager ou SFTP) com esta linha:
+
+```
+FISH_API_KEY=sua_chave_aqui
+```
+
+O painel da Silly Development só expõe os campos listados no `sillydev.conf` (`MAIN_FILE`, `NODE_ARGS`, pacotes npm). Por isso o bot lê um `.env` na raiz do projeto, que já está no `.gitignore` e não vai para o GitHub. O `.env` é lido no início do `index.js`; variáveis já definidas no ambiente têm prioridade.
+
+Sem `FISH_API_KEY`, o bot continua funcionando e só avisa no chat que a voz está desligada.
+
+Como funciona:
+
+- `!tts bom dia a todos` responde com uma mensagem de voz, gravada no formato que o WhatsApp espera (OGG/Opus).
+- O texto depois do comando é falado inteiro, com quebras de linha preservadas.
+- O MP3 da Fish Audio é convertido pelo FFmpeg, o mesmo já usado nas figurinhas animadas.
+- Áudio e figurinha dividem a mesma fila, para não sobrecarregar o servidor.
+- A voz padrão é a da conta. Para escolher outra, publique uma voz na Fish Audio e coloque o id dela em `FISH_VOICE_ID`.
 
 ## Proteção contra ban
 
 - 15 figurinhas por dia, por número
 - 10 segundos entre uma figurinha e outra
+- 10 áudios por dia por número, independente das figurinhas
+- texto de voz limitado a 300 caracteres
 - no máximo 16 MB por arquivo
 - vídeos entram numa fila e só um é convertido por vez
 - figurinha animada fica limitada a 500 KB
@@ -41,10 +68,18 @@ A pasta `session/` fica no disco do servidor e não entra no Git. Não apague el
 
 ## Ajustes
 
-Estas variáveis são opcionais:
+Estas variáveis são opcionais e vão no arquivo `.env` na raiz do projeto, uma por linha (`NOME=valor`):
 
 - `DAILY_LIMIT` padrão `15`
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
 - `MAX_VIDEO_SECONDS` padrão `10`
 - `DATABASE_URL` conexão MySQL para sessão e cota diária
+- `FISH_API_KEY` chave da Fish Audio (sem ela o `!tts` fica desligado)
+- `FISH_VOICE_ID` id da voz a usar; vazio usa a voz padrão da conta
+- `FISH_MODEL` padrão `s2.1-pro-free` (só troque se tiver crédito na conta)
+- `TTS_MAX_CHARS` padrão `300`
+- `TTS_DAILY_LIMIT` padrão `10` áudios por pessoa por dia
+- `TTS_COOLDOWN_SECONDS` padrão `10`
+- `TTS_TIMEOUT_MS` padrão `90000`
+- `PREFIX` padrão `!`
