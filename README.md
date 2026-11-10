@@ -9,7 +9,7 @@ Mande no privado:
 - `!menu` mostra as opções
 - foto com a legenda `!fig` vira figurinha
 - vídeo de até 10 segundos com `!fig` vira figurinha animada
-- `!fig` com um link de vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a mesma figurinha animada e apaga o vídeo logo em seguida
+- `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a mesma figurinha e apaga o arquivo logo em seguida. Um post com várias fotos vira uma figurinha por foto
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem

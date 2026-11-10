@@ -28,6 +28,22 @@ function mp4Variants(item) {
     .map((entry) => ({ url: entry.url, bitrate: entry.bitrate }));
 }
 
+const PHOTO_NAME = /([?&])name=[^&]*/;
+
+// A figurinha é 512px. "large" (~2048px no lado maior) chega nítida
+// sem baixar o original, que em foto de câmera passa fácil dos 16 MB.
+export function photoUrl(url) {
+  if (!url) return null;
+  if (PHOTO_NAME.test(url)) return url.replace(PHOTO_NAME, "$1name=large");
+  return `${url}${url.includes("?") ? "&" : "?"}name=large`;
+}
+
+export function pickPhotos(tweet) {
+  const items = (tweet?.media?.all || tweet?.media?.photos || [])
+    .filter((entry) => entry.type === "photo" && entry.url);
+  return items.map((entry) => photoUrl(entry.url));
+}
+
 export function pickVideo(tweet) {
   const items = tweet?.media?.all || tweet?.media?.videos || [];
   const item = items.find((entry) => entry.type === "video" || entry.type === "gif");
@@ -56,27 +72,47 @@ async function fetchJson(url) {
   return response.json();
 }
 
-export async function resolveXVideo(link) {
+async function loadTweet(link) {
   const parsed = typeof link === "string" ? xLinkOf(link) : link;
   if (!parsed) throw new Error("Esse link não é de um post do X.");
-  let tweet;
   try {
     const data = await fetchJson(`${API}/status/${parsed.id}`);
-    tweet = data?.tweet;
+    if (!data?.tweet) throw new Error("sem post");
+    return data.tweet;
   } catch {
     throw new Error("Não consegui abrir esse post do X.");
   }
-  const video = pickVideo(tweet);
-  if (!video) throw new Error("Esse post não tem vídeo nem GIF.");
-  return video;
 }
 
-export async function downloadVideo(url) {
+export async function resolveXMedia(link) {
+  const tweet = await loadTweet(link);
+  const photos = pickPhotos(tweet);
+  if (photos.length) return { kind: "photo", urls: photos };
+  const video = pickVideo(tweet);
+  if (video) return { kind: video.kind, ...video };
+  throw new Error("Esse post não tem foto, vídeo nem GIF.");
+}
+
+export async function resolveXVideo(link) {
+  const media = await resolveXMedia(link);
+  if (media.kind === "photo") throw new Error("Esse post não tem vídeo nem GIF.");
+  return media;
+}
+
+function extensionOf(url) {
+  const name = new URL(url).pathname.split(".").pop()?.toLowerCase();
+  return ["jpg", "jpeg", "png", "webp"].includes(name) ? name : "mp4";
+}
+
+export async function downloadMedia(url) {
   const target = new URL(url);
   if (target.protocol !== "https:" || !target.hostname.endsWith("twimg.com")) {
-    throw new Error("O vídeo desse post não está disponível para download.");
+    throw new Error("A mídia desse post não está disponível para download.");
   }
-  const tmp = path.join(os.tmpdir(), `x-${Date.now()}-${Math.floor(Math.random() * 1e6)}.mp4`);
+  const tmp = path.join(
+    os.tmpdir(),
+    `x-${Date.now()}-${Math.floor(Math.random() * 1e6)}.${extensionOf(url)}`
+  );
   let response;
   try {
     response = await fetch(target, {
@@ -86,10 +122,10 @@ export async function downloadVideo(url) {
     });
   } catch {
     await fs.unlink(tmp).catch(() => {});
-    throw new Error("Não consegui baixar o vídeo do X.");
+    throw new Error("Não consegui baixar a mídia do X.");
   }
   if (!response.ok || !response.body) {
-    throw new Error("Não consegui baixar o vídeo do X.");
+    throw new Error("Não consegui baixar a mídia do X.");
   }
   const announced = Number(response.headers.get("content-length") || 0);
   if (announced) assertSizeOk(announced);
@@ -109,10 +145,14 @@ export async function downloadVideo(url) {
   } catch (error) {
     await fs.unlink(tmp).catch(() => {});
     throw error.code === "ABORT_ERR"
-      ? new Error("O download do vídeo do X demorou demais.")
+      ? new Error("O download da mídia do X demorou demais.")
       : error;
   }
   return tmp;
+}
+
+export async function downloadVideo(url) {
+  return downloadMedia(url);
 }
 
 export { HOSTS };
