@@ -19,13 +19,15 @@ export function xLinkOf(text) {
 function mp4Variants(item) {
   const formats = item?.formats || [];
   const variants = item?.variants || [];
+  // GIF do X chega com bitrate 0 e um único MP4. Descartar bitrate falso
+  // fazia o bot dizer que o post não tinha mídia.
   const fromFormats = formats
-    .filter((entry) => entry.container === "mp4" && entry.url && entry.bitrate)
-    .map((entry) => ({ url: entry.url, bitrate: entry.bitrate }));
+    .filter((entry) => entry.container === "mp4" && entry.url)
+    .map((entry) => ({ url: entry.url, bitrate: Number(entry.bitrate) || 0 }));
   if (fromFormats.length) return fromFormats;
   return variants
-    .filter((entry) => entry.content_type === "video/mp4" && entry.url && entry.bitrate)
-    .map((entry) => ({ url: entry.url, bitrate: entry.bitrate }));
+    .filter((entry) => entry.content_type === "video/mp4" && entry.url)
+    .map((entry) => ({ url: entry.url, bitrate: Number(entry.bitrate) || 0 }));
 }
 
 const PHOTO_NAME = /([?&])name=[^&]*/;
