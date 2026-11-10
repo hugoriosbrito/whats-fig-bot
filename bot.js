@@ -40,10 +40,10 @@ Mande *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`;
 
 const HELP = `Como funciona:
 
-- Foto com *!fig* vira figurinha 512x512.
-- Vídeo de até ${config.maxVideoSeconds}s com *!fig* vira figurinha animada.
-- *!fig* com um link de foto, vídeo ou GIF do X (x.com ou twitter.com) faz o mesmo e apaga o arquivo depois.
-- *!fig fill* preenche e *!fig stretch* estica.
+- Foto com *!fig* vira figurinha 512x512, inteira.
+- Vídeo de até ${config.maxVideoSeconds}s com *!fig* vira figurinha animada, preenchendo o quadrado.
+- *!fig* com um link de foto, vídeo ou GIF do X (x.com ou twitter.com) faz a figurinha inteira e apaga o arquivo depois.
+- *!fig fill* preenche e *!fig stretch* estica. *!fig fit* cabe inteira.
 - Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeconds}s entre cada uma.
 - *!tts seu texto* vira uma mensagem de voz (até ${config.ttsMaxChars} caracteres).
 - Cada número tem ${config.ttsDailyLimit} áudios por dia e ${config.ttsCooldownSeconds}s entre cada um.
@@ -207,6 +207,11 @@ async function handleLinkSticker(sock, msg, mode, link) {
 }
 
 async function handleSticker(sock, msg, mode) {
+  // Sem modo explícito: foto e link do X cabem inteiros (fit).
+  // Vídeo enviado no WhatsApp continua preenchendo (fill).
+  const imageMode = mode || "fit";
+  const videoMode = mode || "fill";
+  const linkMode = mode || "fit";
   const chat = msg.key.remoteJid;
   const sender = senderOf(msg);
   const quota = await checkQuota(sender);
@@ -245,7 +250,7 @@ async function handleSticker(sock, msg, mode) {
   if (!target) {
     const link = xLinkOf(extractBody(msg));
     if (link) {
-      await handleLinkSticker(sock, msg, mode, link);
+      await handleLinkSticker(sock, msg, linkMode, link);
       return;
     }
     await sendText(sock, chat, `Manda uma foto ou um vídeo com a legenda *!fig*, responde uma mídia com *!fig*, ou manda *!fig* com um link de foto, vídeo ou GIF do X.\n\n${HELP}`, msg);
@@ -264,8 +269,8 @@ async function handleSticker(sock, msg, mode) {
     try {
       input = await downloadToTemp(sock, target);
       output = isVideo
-        ? await videoToSticker(input, { mode })
-        : await imageToSticker(input, { mode });
+        ? await videoToSticker(input, { mode: videoMode })
+        : await imageToSticker(input, { mode: imageMode });
       const webp = await fs.readFile(output);
       if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
         groupCache.set(chat, await sock.groupMetadata(chat));
@@ -383,7 +388,7 @@ async function handleIncoming(sock, msg) {
       await sendText(sock, chat, `${stickerLine}\n${voiceLine}`, msg);
     } else if (["fig", "s", "sticker"].includes(cmd)) {
       const requested = (args[0] || "").toLowerCase();
-      const mode = ["fit", "fill", "stretch"].includes(requested) ? requested : "fill";
+      const mode = ["fit", "fill", "stretch"].includes(requested) ? requested : null;
       await handleSticker(sock, msg, mode);
     } else if (["tts", "fala", "voz", "audio", "áudio"].includes(cmd)) {
       await handleVoice(sock, msg, ttsTextFrom([rest]));
