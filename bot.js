@@ -16,6 +16,7 @@ import { imageToSticker, videoToSticker, assertSizeOk, cleanup } from "./sticker
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
+import { downloadVideo, resolveXVideo, xLinkOf } from "./link.js";
 import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
@@ -25,6 +26,7 @@ const MENU = `*FigBot* — escolha uma opção:
 *1* Criar figurinha
 Mande uma foto ou um vídeo com a legenda *!fig*.
 Também vale responder a mídia com *!fig*.
+Ou mande *!fig* com um link de vídeo ou GIF do X.
 
 *2* Meus limites
 Mande *!resto* para ver quantas restam hoje.
@@ -40,6 +42,7 @@ const HELP = `Como funciona:
 
 - Foto com *!fig* vira figurinha 512x512.
 - Vídeo de até ${config.maxVideoSeconds}s com *!fig* vira figurinha animada.
+- *!fig* com um link de vídeo ou GIF do X (x.com ou twitter.com) faz o mesmo e apaga o vídeo depois.
 - *!fig fill* preenche e *!fig stretch* estica.
 - Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeconds}s entre cada uma.
 - *!tts seu texto* vira uma mensagem de voz (até ${config.ttsMaxChars} caracteres).
@@ -127,6 +130,65 @@ function enqueue(task) {
   return { position, run };
 }
 
+async function handleLinkSticker(sock, msg, mode, link) {
+  const chat = msg.key.remoteJid;
+  const sender = senderOf(msg);
+  const quota = await checkQuota(sender);
+  if (!quota.ok) {
+    await sendText(sock, chat, `Você usou suas *${quota.used}/${quota.limit}* figurinhas de hoje. Volte amanhã.`, msg);
+    return;
+  }
+  const pace = await checkCooldown(sender);
+  if (!pace.ok) {
+    await sendText(sock, chat, `Calma aí. Aguarde *${pace.wait}s* antes da próxima.`, msg);
+    return;
+  }
+
+  let video;
+  try {
+    video = await resolveXVideo(link);
+  } catch (error) {
+    await sendText(sock, chat, error.message, msg);
+    return;
+  }
+  if (video.seconds > config.maxVideoSeconds) {
+    await sendText(
+      sock,
+      chat,
+      `Esse vídeo tem ${Math.ceil(video.seconds)}s. O máximo para figurinha animada é ${config.maxVideoSeconds}s.`,
+      msg
+    );
+    return;
+  }
+
+  const { position, run } = enqueue(async () => {
+    let input;
+    let output;
+    try {
+      input = await downloadVideo(video.url);
+      output = await videoToSticker(input, { mode });
+      const webp = await fs.readFile(output);
+      if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
+        groupCache.set(chat, await sock.groupMetadata(chat));
+      }
+      await sock.sendMessage(chat, { sticker: webp }, { quoted: msg });
+      const usage = await registerUse(sender);
+      log.info({ sender, used: usage.used, video: true, source: "x" }, "figurinha enviada");
+    } finally {
+      await cleanup(input, output);
+    }
+  });
+
+  const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
+  await sendText(sock, chat, `Baixando o vídeo do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+  try {
+    await run;
+  } catch (error) {
+    log.error({ err: error }, "falha ao criar figurinha do X");
+    await sendText(sock, chat, `Não consegui converter: ${error.message}`, msg);
+  }
+}
+
 async function handleSticker(sock, msg, mode) {
   const chat = msg.key.remoteJid;
   const sender = senderOf(msg);
@@ -164,7 +226,12 @@ async function handleSticker(sock, msg, mode) {
   }
 
   if (!target) {
-    await sendText(sock, chat, `Manda uma foto ou um vídeo com a legenda *!fig*, ou responde uma mídia com *!fig*.\n\n${HELP}`, msg);
+    const link = xLinkOf(extractBody(msg));
+    if (link) {
+      await handleLinkSticker(sock, msg, mode, link);
+      return;
+    }
+    await sendText(sock, chat, `Manda uma foto ou um vídeo com a legenda *!fig*, responde uma mídia com *!fig*, ou manda *!fig* com um link de vídeo ou GIF do X.\n\n${HELP}`, msg);
     return;
   }
 
@@ -304,7 +371,7 @@ async function handleIncoming(sock, msg) {
     } else if (["tts", "fala", "voz", "audio", "áudio"].includes(cmd)) {
       await handleVoice(sock, msg, ttsTextFrom([rest]));
     } else if (cmd === "1") {
-      await sendText(sock, chat, "Beleza. Manda a foto ou o vídeo com a legenda *!fig*.", msg);
+      await sendText(sock, chat, "Beleza. Manda a foto ou o vídeo com a legenda *!fig*, ou *!fig* com um link de vídeo ou GIF do X.", msg);
     } else if (cmd === "2") {
       const sticker = await checkQuota(senderOf(msg), "fig");
       const voice = await checkQuota(senderOf(msg), "tts");
