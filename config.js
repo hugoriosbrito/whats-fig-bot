@@ -3,6 +3,13 @@ export const config = {
   // Limite diário de figurinhas por pessoa (anti-ban: evita flood)
   dailyLimit: Number(process.env.DAILY_LIMIT || 15),
 
+  // Números que podem cadastrar VIP pelo chat. Só o número, separado por vírgula.
+  // Ex: ADMIN_NUMBERS=5511999998888,5511888887777
+  adminNumbers: (process.env.ADMIN_NUMBERS || "")
+    .split(/[,;]+/)
+    .map((value) => value.replace(/\D/g, ""))
+    .filter((value) => value.length >= 10),
+
   // Janela anti-flood: mínimo de segundos entre uma figurinha e outra da mesma pessoa
   cooldownSeconds: Number(process.env.COOLDOWN_SECONDS || 10),
 

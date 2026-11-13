@@ -62,6 +62,14 @@ export async function setupDatabase() {
       last_at BIGINT NOT NULL
     )
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS vips (
+      phone VARCHAR(32) PRIMARY KEY,
+      sticker_limit INT NOT NULL,
+      tts_limit INT NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
 }
 
 export async function readAuth(id) {
@@ -98,6 +106,34 @@ export async function writeUsage(phone, count, lastAt) {
      ON DUPLICATE KEY UPDATE day = VALUES(day), count = VALUES(count), last_at = VALUES(last_at)`,
     [phone, today(), count, lastAt]
   );
+}
+
+export async function listVips() {
+  const [rows] = await queryWithRetry(
+    "SELECT phone, sticker_limit AS stickerLimit, tts_limit AS ttsLimit FROM vips ORDER BY phone"
+  );
+  return rows;
+}
+
+export async function readVip(phone) {
+  const [rows] = await queryWithRetry(
+    "SELECT phone, sticker_limit AS stickerLimit, tts_limit AS ttsLimit FROM vips WHERE phone = ?",
+    [phone]
+  );
+  return rows[0] || null;
+}
+
+export async function writeVip(phone, stickerLimit, ttsLimit) {
+  await queryWithRetry(
+    `INSERT INTO vips (phone, sticker_limit, tts_limit) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE sticker_limit = VALUES(sticker_limit), tts_limit = VALUES(tts_limit)`,
+    [phone, stickerLimit, ttsLimit]
+  );
+}
+
+export async function deleteVip(phone) {
+  const [result] = await queryWithRetry("DELETE FROM vips WHERE phone = ?", [phone]);
+  return result.affectedRows > 0;
 }
 
 export { today, config };

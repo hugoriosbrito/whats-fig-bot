@@ -11,7 +11,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
-import { checkQuota, checkCooldown, registerUse } from "./limits.js";
+import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
 import { imageToSticker, videoToSticker, assertSizeOk, cleanup } from "./sticker.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
@@ -36,7 +36,10 @@ O máximo é ${config.dailyLimit} por dia.
 Mande *!ajuda*.
 
 *4* Falar um texto
-Mande *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`;
+Mande *!tts* e o texto. Exemplo: *!tts bom dia a todos*.
+
+*5* VIP
+Quem tem cota maior vê o próprio limite em *!resto*.`;
 
 const HELP = `Como funciona:
 
@@ -45,6 +48,7 @@ const HELP = `Como funciona:
 - *!fig* com um link de foto, vídeo ou GIF do X (x.com ou twitter.com) faz a figurinha inteira e apaga o arquivo depois.
 - *!fig fill* preenche e *!fig stretch* estica. *!fig fit* cabe inteira.
 - Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeconds}s entre cada uma.
+- VIP tem a cota cadastrada pelo admin, no lugar da padrão.
 - *!tts seu texto* vira uma mensagem de voz (até ${config.ttsMaxChars} caracteres).
 - Cada número tem ${config.ttsDailyLimit} áudios por dia e ${config.ttsCooldownSeconds}s entre cada um.
 - Funciona no privado e no grupo. Sem comando, eu fico quieto.`;
@@ -364,6 +368,72 @@ async function handleVoice(sock, msg, text) {
   }
 }
 
+function targetPhone(msg, raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits) return digits;
+  const message = unwrapMessage(msg.message);
+  const ctx = message?.extendedTextMessage?.contextInfo;
+  return phoneOf(ctx?.participantAlt || ctx?.participant || "");
+}
+
+async function handleAdmin(sock, msg, action, args) {
+  const chat = msg.key.remoteJid;
+  if (!isAdmin(senderOf(msg))) {
+    await sendText(sock, chat, "Só o admin pode mexer nos VIPs.", msg);
+    return;
+  }
+
+  if (action === "vips") {
+    const vips = await vipList();
+    if (!vips.length) {
+      await sendText(sock, chat, "Nenhum VIP cadastrado.", msg);
+      return;
+    }
+    const lines = vips.map((vip) => `*${vip.phone}* — ${vip.stickerLimit} figurinhas e ${vip.ttsLimit} áudios por dia.`);
+    await sendText(sock, chat, lines.join("\n"), msg);
+    return;
+  }
+
+  const phone = targetPhone(msg, args[0]);
+  if (!phone) {
+    await sendText(
+      sock,
+      chat,
+      "Responde a mensagem da pessoa ou manda o número.\n*!vip 5511999998888 50* dá 50 figurinhas.\n*!vip 5511999998888 50 30* também muda os áudios.\n*!tirarvip 5511999998888* volta ao limite normal.\n*!vips* lista todo mundo.",
+      msg
+    );
+    return;
+  }
+
+  if (action === "tirarvip") {
+    const removed = await removeVip(phone);
+    await sendText(
+      sock,
+      chat,
+      removed ? `*${phone}* voltou ao limite normal.` : `*${phone}* não estava na lista VIP.`,
+      msg
+    );
+    return;
+  }
+
+  const stickerLimit = Number(args[1]);
+  if (!Number.isInteger(stickerLimit)) {
+    await sendText(sock, chat, "Faltou a quantidade de figurinhas. Exemplo: *!vip 5511999998888 50*.", msg);
+    return;
+  }
+  const saved = await setVip(phone, stickerLimit, args[2]);
+  if (!saved) {
+    await sendText(sock, chat, "A quantidade precisa ser um número inteiro de 1 a 10000.", msg);
+    return;
+  }
+  await sendText(
+    sock,
+    chat,
+    `*${saved.phone}* agora tem *${saved.stickerLimit}* figurinhas e *${saved.ttsLimit}* áudios por dia.`,
+    msg
+  );
+}
+
 async function handleIncoming(sock, msg) {
   try {
     if (!msg.message || msg.key.fromMe || msg.key.remoteJid === "status@broadcast") return;
@@ -407,6 +477,10 @@ async function handleIncoming(sock, msg) {
       await sendText(sock, chat, HELP, msg);
     } else if (cmd === "4") {
       await sendText(sock, chat, `Manda *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`, msg);
+    } else if (cmd === "5") {
+      await sendText(sock, chat, "VIP é uma cota maior, cadastrada pelo admin. O *!resto* mostra o seu limite.", msg);
+    } else if (["vip", "tirarvip", "vips"].includes(cmd)) {
+      await handleAdmin(sock, msg, cmd, args);
     }
   } catch (error) {
     log.error({ err: error }, "erro ao processar mensagem");

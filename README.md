@@ -16,7 +16,19 @@ Mande no privado:
 - sem modo, foto e link usam `fit`; vídeo enviado no WhatsApp usa `fill`
 - `!tts seu texto` vira uma mensagem de voz (Fish Audio, modelo gratuito S2.1 Pro)
 - `!resto` mostra quantas figurinhas e áudios ainda restam hoje
-- `1`, `2`, `3` e `4` repetem as opções do menu
+- `1`, `2`, `3`, `4` e `5` repetem as opções do menu
+
+## VIP
+
+O número admin fica em `ADMIN_NUMBERS` no `.env`. Só esses números podem cadastrar VIP pelo chat. A cota do VIP substitui o limite padrão e vale no mesmo dia.
+
+- `!vip 5511999998888 50` dá 50 figurinhas por dia (os áudios continuam no limite padrão)
+- `!vip 5511999998888 50 30` dá 50 figurinhas e 30 áudios por dia
+- responder a mensagem da pessoa com `!vip 50` também funciona
+- `!tirarvip 5511999998888` volta a pessoa ao limite normal
+- `!vips` lista os VIPs cadastrados
+
+A lista fica no MySQL quando `DATABASE_URL` existe. Sem banco, fica em `data/vips.json`.
 
 No grupo, basta usar o comando. Não precisa mencionar o bot.
 
@@ -73,6 +85,7 @@ A pasta `session/` fica no disco do servidor e não entra no Git. Não apague el
 Estas variáveis são opcionais e vão no arquivo `.env` na raiz do projeto, uma por linha (`NOME=valor`):
 
 - `DAILY_LIMIT` padrão `15`
+- `ADMIN_NUMBERS` números do admin, só dígitos, separados por vírgula. Ex: `5511999998888,5511888887777`
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
 - `MAX_VIDEO_SECONDS` padrão `10`

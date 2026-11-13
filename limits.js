@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
-import { hasDatabase, readUsage, writeUsage, today } from "./db.js";
+import { deleteVip, hasDatabase, listVips, readUsage, readVip, today, writeUsage, writeVip } from "./db.js";
 
 // Controle de uso diário por pessoa, salvo em disco (data/usage.json).
 // Sobrevive a restart/redeploy — essencial no free tier.
@@ -11,6 +11,7 @@ import { hasDatabase, readUsage, writeUsage, today } from "./db.js";
 // para não perder o histórico; os demais ganham prefixo, ex: "tts:5511999998888".
 
 const file = path.join(config.dataDir, "usage.json");
+const vipFile = path.join(config.dataDir, "vips.json");
 
 async function load() {
   try {
@@ -28,6 +29,23 @@ async function save(db) {
   await fs.rename(tmp, file); // escrita atômica: nunca corrompe em crash
 }
 
+async function loadVips() {
+  try {
+    const raw = await fs.readFile(vipFile, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveVips(vips) {
+  await fs.mkdir(config.dataDir, { recursive: true });
+  const tmp = vipFile + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(vips));
+  await fs.rename(tmp, vipFile);
+}
+
 function senderKey(jid) {
   // "5511999998888@s.whatsapp.net" -> "5511999998888" (só o número)
   return String(jid || "").split("@")[0].split(":")[0];
@@ -38,8 +56,26 @@ function usageKey(jid, kind) {
   return kind === "fig" ? phone : `${kind}:${phone}`;
 }
 
-const quotaOf = (kind) => (kind === "tts" ? config.ttsDailyLimit : config.dailyLimit);
+const quotaOf = (kind, vip) => {
+  if (kind === "tts") return vip?.ttsLimit ?? config.ttsDailyLimit;
+  return vip?.stickerLimit ?? config.dailyLimit;
+};
 const cooldownOf = (kind) => (kind === "tts" ? config.ttsCooldownSeconds : config.cooldownSeconds);
+
+export function phoneOf(jid) {
+  return senderKey(jid);
+}
+
+export function isAdmin(jid) {
+  return config.adminNumbers.includes(phoneOf(jid));
+}
+
+async function vipFor(phone) {
+  if (!phone) return null;
+  if (hasDatabase()) return readVip(phone);
+  const vips = await loadVips();
+  return vips[phone] || null;
+}
 
 // Só a cota diária. Não olha o intervalo entre usos.
 async function entryFor(key) {
@@ -49,16 +85,18 @@ async function entryFor(key) {
 }
 
 export async function checkQuota(jid, kind = "fig") {
+  const phone = senderKey(jid);
   const key = usageKey(jid, kind);
-  const limit = quotaOf(kind);
+  const vip = await vipFor(phone);
+  const limit = quotaOf(kind, vip);
   const entry = await entryFor(key);
   const day = today();
   const used = entry && entry.day === day ? entry.count : 0;
 
   if (used >= limit) {
-    return { ok: false, reason: "limit", used, limit };
+    return { ok: false, reason: "limit", used, limit, vip: Boolean(vip) };
   }
-  return { ok: true, used, limit };
+  return { ok: true, used, limit, vip: Boolean(vip) };
 }
 
 // Intervalo mínimo entre usos da mesma pessoa. Independente da cota.
@@ -89,5 +127,44 @@ export async function registerUse(jid, kind = "fig") {
     db[key] = next;
     await save(db);
   }
-  return { used: next.count, limit: quotaOf(kind) };
+  const vip = await vipFor(senderKey(jid));
+  return { used: next.count, limit: quotaOf(kind, vip) };
+}
+
+function limitsOf(stickerLimit, ttsLimit) {
+  const sticker = Number(stickerLimit);
+  const voice = ttsLimit === undefined || ttsLimit === "" ? config.ttsDailyLimit : Number(ttsLimit);
+  if (!Number.isInteger(sticker) || sticker < 1 || sticker > 10000) return null;
+  if (!Number.isInteger(voice) || voice < 1 || voice > 10000) return null;
+  return { stickerLimit: sticker, ttsLimit: voice };
+}
+
+export async function setVip(phone, stickerLimit, ttsLimit) {
+  const limits = limitsOf(stickerLimit, ttsLimit);
+  if (!limits) return null;
+  if (hasDatabase()) {
+    await writeVip(phone, limits.stickerLimit, limits.ttsLimit);
+  } else {
+    const vips = await loadVips();
+    vips[phone] = limits;
+    await saveVips(vips);
+  }
+  return { phone, ...limits };
+}
+
+export async function removeVip(phone) {
+  if (hasDatabase()) return deleteVip(phone);
+  const vips = await loadVips();
+  if (!vips[phone]) return false;
+  delete vips[phone];
+  await saveVips(vips);
+  return true;
+}
+
+export async function vipList() {
+  if (hasDatabase()) return listVips();
+  const vips = await loadVips();
+  return Object.entries(vips)
+    .map(([phone, limits]) => ({ phone, ...limits }))
+    .sort((a, b) => a.phone.localeCompare(b.phone));
 }
