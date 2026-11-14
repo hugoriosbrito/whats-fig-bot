@@ -39,24 +39,44 @@ export async function toMp4(input) {
   return out;
 }
 
-export async function emojiSticker(first, second) {
-  const out = path.join(os.tmpdir(), `emoji-${Date.now()}.webp`);
-  const svg = `<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-    <rect width="512" height="512" fill="none"/>
-    <text x="150" y="300" font-size="180" text-anchor="middle">${escapeXml(first)}</text>
-    <text x="360" y="340" font-size="180" text-anchor="middle">${escapeXml(second)}</text>
-  </svg>`;
-  await sharp(Buffer.from(svg)).webp({ quality: 80 }).toFile(out);
-  const made = await fs.readFile(out);
-  await fs.unlink(out);
-  return made;
+const EMOJI_SVG = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg";
+
+export function emojiGlyphs(text) {
+  return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(String(text || ""))]
+    .map((part) => part.segment)
+    .filter((segment) => /\p{Extended_Pictographic}/u.test(segment));
 }
 
-function escapeXml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+function emojiCode(glyph) {
+  return [...glyph]
+    .map((char) => char.codePointAt(0).toString(16))
+    .filter((code) => code !== "fe0f")
+    .join("-");
+}
+
+async function emojiSvg(glyph) {
+  const response = await fetch(`${EMOJI_SVG}/${emojiCode(glyph)}.svg`);
+  if (!response.ok) throw new Error("Não achei a imagem desse emoji.");
+  const text = await response.text();
+  if (!text.includes("<svg")) throw new Error("A imagem desse emoji veio vazia.");
+  return Buffer.from(text);
+}
+
+export async function emojiSticker(first, second) {
+  const [left, right] = await Promise.all([emojiSvg(first), emojiSvg(second)]);
+  const size = 250;
+  const rendered = await Promise.all(
+    [left, right].map((svg) => sharp(svg).resize(size, size, { fit: "contain" }).png().toBuffer())
+  );
+  return sharp({
+    create: { width: 512, height: 512, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  })
+    .composite([
+      { input: rendered[0], left: 6, top: 131 },
+      { input: rendered[1], left: 256, top: 131 },
+    ])
+    .webp({ quality: 80 })
+    .toBuffer();
 }
 
 export async function removeFile(file) {

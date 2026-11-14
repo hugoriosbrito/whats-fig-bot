@@ -24,7 +24,7 @@ import { announceBusy, knownPhones, rememberUser, startAnnounce, stopAnnounce } 
 import * as games from "./games.js";
 import * as jokes from "./jokes.js";
 import * as social from "./social.js";
-import { emojiSticker, removeFile, toMp3, toMp4 } from "./media.js";
+import { emojiGlyphs, emojiSticker, removeFile, toMp3, toMp4 } from "./media.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -631,7 +631,7 @@ async function handleFeature(sock, msg, cmd, args, rest, mention) {
   if (cmd === "peito-reset" || cmd === "bunda-reset") return deliver(sock, msg, await jokes.bodyReset(msg, cmd.replace("-reset", ""))), true;
 
   if (cmd === "emoji") {
-    const glyphs = [...rest].filter((char) => /\p{Extended_Pictographic}/u.test(char));
+    const glyphs = emojiGlyphs(rest);
     if (glyphs.length < 2) {
       await sendText(sock, chat, "Manda dois emojis: *!emoji* 😀 🔥", msg);
       return true;
