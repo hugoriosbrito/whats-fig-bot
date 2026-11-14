@@ -36,6 +36,38 @@ export function pintoComment(score) {
   return "A ciência agradece o material de estudo.";
 }
 
+export const BODY = {
+  peito: {
+    title: "Peito",
+    lines: [
+      ["esquerdo", "Esquerdo", 70, 120],
+      ["direito", "Direito", 70, 120],
+      ["diferenca", "Diferença", 0, 4],
+    ],
+    unit: "cm",
+  },
+  bunda: {
+    title: "Bunda",
+    lines: [
+      ["esquerda", "Esquerda", 80, 140],
+      ["direita", "Direita", 80, 140],
+      ["diferenca", "Diferença", 0, 4],
+    ],
+    unit: "cm",
+  },
+};
+
+export function measureBody(kind, random = Math.random) {
+  const spec = BODY[kind];
+  const parts = {};
+  for (const [key, , min, max] of spec.lines) parts[key] = round1(min, max, random);
+  const span = spec.lines.reduce((sum, [, , min, max]) => sum + (max - min), 0);
+  const filled = spec.lines.reduce((sum, [key, , min]) => sum + (parts[key] - min), 0);
+  const balance = 1 - Math.min(1, parts.diferenca / 4);
+  const score = Math.round(Math.min(1, Math.max(0, (filled / span) * 0.7 + balance * 0.3)) * 1000);
+  return { ...parts, score };
+}
+
 export function measurePinto(random = Math.random) {
   const flaccid = round1(PINTO.minFlaccid, PINTO.maxFlaccid, random);
   const erect = round1(Math.max(PINTO.minErect, flaccid), PINTO.maxErect, random);

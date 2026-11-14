@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isAdmin, phoneOf } from "./limits.js";
 import { readStore, writeStore } from "./store.js";
-import { measurePinto, pintoComment, PINTO } from "./logic.js";
+import { BODY, measureBody, measurePinto, pintoComment, PINTO } from "./logic.js";
 
 function loadPhrases() {
   try {
@@ -129,6 +129,53 @@ export async function pinto(msg, mention) {
   store[key] = { ...result, at: now, name: label };
   await writeStore("pinto", store);
   return `Dr. FigBot mediu *${label}*.\nFlácido: ${result.flaccid} cm\nEreto: ${result.erect} cm\nCircunferência: ${result.girth} cm\nCurvatura: ${result.curvature}°\nNota: *${result.score}*\n${pintoComment(result.score)}`;
+}
+
+export async function body(msg, mention, kind) {
+  if (!groupOf(msg)) return "A medição é no grupo.";
+  const spec = BODY[kind];
+  const phone = mention || phoneOf(msg.sender);
+  const label = shown(msg, phone);
+  const key = `${msg.group}:${phone}`;
+  const store = await readStore(kind);
+  const previous = store[key];
+  const now = Date.now();
+  if (previous && now - previous.at < PINTO.cooldownMs) {
+    const when = new Date(previous.at + PINTO.cooldownMs);
+    const day = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short" }).format(when);
+    return `*${label}* já mediu o ${spec.title.toLowerCase()}. A próxima é em *${day}*. Nota guardada: *${previous.score}*.`;
+  }
+  const result = measureBody(kind);
+  store[key] = { ...result, at: now, name: label };
+  await writeStore(kind, store);
+  const lines = spec.lines.map(([, title, , ], index) => {
+    const keyName = spec.lines[index][0];
+    return `${title}: ${result[keyName]} ${spec.unit}`;
+  });
+  return `Dr. FigBot mediu o ${spec.title.toLowerCase()} de *${label}*.\n${lines.join("\n")}\nNota: *${result.score}*\n${pintoComment(result.score)}`;
+}
+
+export async function bodyRank(msg, kind) {
+  if (!groupOf(msg)) return "O ranking é no grupo.";
+  const store = await readStore(kind);
+  const rows = Object.entries(store)
+    .filter(([key]) => key.startsWith(`${msg.group}:`))
+    .map(([key, data]) => ({ phone: data.name || key.slice(msg.group.length + 1), score: data.score }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+  if (!rows.length) return `Ninguém mediu neste grupo. Manda *!${kind}*.`;
+  return rows.map((row, i) => `${i + 1}. ${row.phone} — ${row.score}`).join("\n");
+}
+
+export async function bodyReset(msg, kind) {
+  if (!groupOf(msg)) return "O reset é no grupo.";
+  if (!isAdmin(msg.sender)) return "Só o admin apaga o ranking.";
+  const store = await readStore(kind);
+  for (const key of Object.keys(store)) {
+    if (key.startsWith(`${msg.group}:`)) delete store[key];
+  }
+  await writeStore(kind, store);
+  return "Ranking deste grupo apagado.";
 }
 
 export async function pintoRank(msg) {

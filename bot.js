@@ -626,6 +626,9 @@ async function handleFeature(sock, msg, cmd, args, rest, mention) {
   if (cmd === "pinto") return deliver(sock, msg, await jokes.pinto(msg, mention)), true;
   if (cmd === "pinto-ranking") return deliver(sock, msg, await jokes.pintoRank(msg)), true;
   if (cmd === "pinto-reset") return deliver(sock, msg, await jokes.pintoReset(msg)), true;
+  if (cmd === "peito" || cmd === "bunda") return deliver(sock, msg, await jokes.body(msg, mention, cmd)), true;
+  if (cmd === "peito-ranking" || cmd === "bunda-ranking") return deliver(sock, msg, await jokes.bodyRank(msg, cmd.replace("-ranking", ""))), true;
+  if (cmd === "peito-reset" || cmd === "bunda-reset") return deliver(sock, msg, await jokes.bodyReset(msg, cmd.replace("-reset", ""))), true;
 
   if (cmd === "emoji") {
     const glyphs = [...rest].filter((char) => /\p{Extended_Pictographic}/u.test(char));

@@ -74,7 +74,7 @@ Jogos gastam o limite de figurinha do dia.`,
 *!aniversario* @pessoa — parabéns.
 *!pecar* e *!meus-pecados*.
 *!violencia*, *!morreu*, *!genshin*, *!hora*.
-*!pinto* — medição no grupo, uma a cada 3 dias. *!pinto-ranking* mostra o grupo.`,
+*!pinto*, *!peito* e *!bunda* — medição no grupo, uma a cada 3 dias. *!pinto-ranking*, *!peito-ranking* e *!bunda-ranking* mostram o grupo.`,
   },
   {
     id: "6",
