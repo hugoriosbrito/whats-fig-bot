@@ -4,10 +4,12 @@ import { readStore, writeStore } from "./store.js";
 const DAY = 24 * 60 * 60 * 1000;
 
 const COISAR = [
-  "chegou junto e não explicou nada",
-  "trocou um olhar que o grupo inteiro viu",
-  "mandou um oi que durou demais",
-  "ficou do lado e fingiu que era coincidência",
+  "encostou e chamou de coincidência, como todo álibi barato",
+  "trocou um olhar que o grupo inteiro precificou",
+  "mandou um oi com tempo de quem já inventou a desculpa",
+  "ficou perto o bastante para negar depois",
+  "riu da piada ruim e achou que isso era química",
+  "ofereceu carona sabendo que o destino era fofoca",
 ];
 
 function label(msg, phone, saved) {

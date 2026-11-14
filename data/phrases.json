@@ -1,45 +1,82 @@
 {
   "biscoito": [
-    "Quem espera sempre alcança, desde que não espere sentado no grupo.",
-    "A sorte de hoje é saber parar de rolar a conversa.",
-    "Um passo de cada vez. O segundo pode ser depois do almoço.",
-    "O que você procura também pode estar no privado, em silêncio."
+    "Hoje a sorte passou, olhou sua ficha e seguiu o ônibus.",
+    "Você não está atrasado. O prazo é que desistiu de você.",
+    "Confia no processo. O processo não retribui.",
+    "Amanhã melhora. Mentira útil, validade de 24 horas.",
+    "Seu potencial é enorme. Pena que mora longe.",
+    "O universo conspirava. Aí viu a mensagem e cancelou.",
+    "Nada é permanente. Sua fila no banco discorda.",
+    "Você é a prova de que participar já é um tipo de derrota.",
+    "Grandes coisas exigem paciência. Contas, não.",
+    "Alguém acredita em você. Ainda não te conhece direito.",
+    "O melhor ainda está por vir. O pior também reservou lugar.",
+    "Respira. O problema continua, só que agora com plateia.",
+    "Você nasceu para brilhar. O grupo nasceu para abaixar o brilho.",
+    "Tudo acontece por um motivo. O motivo hoje é má vontade.",
+    "Sorte rara: ninguém te marcou numa cobrança hoje. Ainda."
   ],
   "cantada": [
-    "seu nome cabe no meu contato e sobra espaço",
-    "se beleza fosse figurinha, você estourava o limite do dia",
-    "não sou GPS, mas posso me perder com você",
-    "me chama de !fig que eu me encaixo"
+    "não é amor, é falta de opção com boa iluminação",
+    "se eu sumir, foi o bom senso. se eu ficar, foi teimosia",
+    "você não é meu tipo. meu tipo é quem responde",
+    "bora estragar o dia um do outro com compromisso",
+    "eu não acredito em alma gêmea. acredito em alguém que aguente até terça",
+    "seu sorriso é bonito. sua ficha, a gente negocia",
+    "não vou prometer o mundo. o mundo também não prometeu nada",
+    "te chamaria de gostosa, mas o grupo já fez isso sem a sua licença",
+    "a química aqui é de laboratório barato: fede e mesmo assim alguém cheira",
+    "casa comigo na ficção. no cartório eu desapareço",
+    "você merece coisa melhor. infelizmente eu cheguei primeiro",
+    "não é cantada. é um orçamento sem garantia"
   ],
   "violencia": [
-    "Ameaçou a cadeira e a cadeira nem levantou.",
-    "Discutiu com o espelho e perdeu nos argumentos.",
-    "Partiu para a ignorância e voltou sem troco."
+    "Ameaçou a cadeira. A cadeira pediu pensão.",
+    "Partiu pra briga e voltou com a própria desculpa.",
+    "Xingou tão alto que o vizinho cobrou ingresso.",
+    "Mostrou o dedo pro espelho e o espelho devolveu dois.",
+    "Declarou guerra e assinou o tratado antes do intervalo.",
+    "Ia partir tudo. Partiu foi a própria narrativa.",
+    "Gritou com a torradeira. A torradeira continua empregada."
   ],
   "morreu": [
-    "de tanto esperar resposta",
-    "de rir do próprio áudio",
-    "de causas naturais: o grupo"
+    "de ler o próprio histórico e concordar",
+    "de esperar um 'já te respondo' de 2019",
+    "de causas naturais: o grupo viu e não fez nada",
+    "de susto, ao descobrir que a opinião tinha plateia",
+    "de overdose de áudio de 4 minutos",
+    "em off, porque nem o óbito quis testemunha"
   ],
   "aniversario": [
-    "mais um ano e o grupo continua de pé",
-    "pede o presente antes que vire boleto fictício"
+    "mais um ano e a desculpa de 'ainda sou novo' vence por W.O.",
+    "parabéns. o bolo é fictício, a idade não",
+    "sobreviveu mais 365 dias sem bloqueio em massa. quase uma carreira",
+    "pede o presente agora. ano que vem a inflação lembra de você"
   ],
   "pecados": [
-    "ler o grupo e não responder",
-    "mandar figurinha às 3 da manhã",
-    "abrir o áudio no alto",
-    "sumir no meio do stop"
+    "ler tudo e responder só 'k'",
+    "mandar áudio de quatro minutos para uma pergunta de sim ou não",
+    "sumir no meio do plano e voltar só para opinar",
+    "abrir a figurinha no grupo do trabalho",
+    "dizer que vai sair e ficar mais duas horas",
+    "repostar conselho que você mesmo não segue",
+    "marcar geral para um problema que é seu",
+    "guardar print desde 2022 esperando a hora"
   ],
   "presente": [
-    "uma meia só",
-    "um carregador que não é o seu",
-    "um adesivo que já foi figurinha",
-    "um copo escrito com o nome de outra pessoa"
+    "uma meia. a outra fica de refém",
+    "um carregador que funciona se você implorar",
+    "um copo com o nome de quem terminou com você",
+    "um vale que vence ontem",
+    "uma planta que já chegou paliativa",
+    "o fio que ninguém sabe de qual aparelho é",
+    "um livro que a pessoa vai exibir e não abrir"
   ],
   "genshin": [
-    "viajante, espada sem elemento",
-    "bardo, arco, anemo",
-    "cavaleira, espada, pyro"
+    "viajante sem elemento, espada emprestada e lore que ninguém leu",
+    "bardo, arco, anemo e uma conta de bar que não fecha",
+    "cavaleira, espada, pyro, currículo inflado",
+    "suporte de gelo que cura os outros e se afunda sozinho",
+    "personagem 5 estrelas com a personalidade de um e-mail automático"
   ]
 }

@@ -27,13 +27,13 @@ export function pintoScore(flaccid, erect, girth, curvature) {
 }
 
 export function pintoComment(score) {
-  if (score >= 900) return "Isso aqui pede licença especial.";
-  if (score >= 750) return "Bem acima do que o consultório esperava.";
-  if (score >= 600) return "Acima da média.";
-  if (score >= 450) return "Na média. Cumpre o expediente.";
-  if (score >= 300) return "Abaixo. Talvez seja o ar condicionado.";
-  if (score >= 150) return "Compacto. Ocupa pouco espaço.";
-  return "A ciência agradece o material de estudo.";
+  if (score >= 900) return "Ou é lenda ou a régua estava bêbada. O grupo vai cobrar prova.";
+  if (score >= 750) return "Acima do que esse consultório aguenta sem processar alguém.";
+  if (score >= 600) return "Bom o bastante para contar vantagem. Não o bastante para calar o grupo.";
+  if (score >= 450) return "Na média. Serve. Ninguém pediu mais que isso, e ainda assim.";
+  if (score >= 300) return "Abaixo. Dá para culpar o ar, a luz ou a genética. Escolhe uma.";
+  if (score >= 150) return "Compacto. A mala de mão agradece. O ego, não.";
+  return "A ciência pediu a amostra de volta. Disse que não era representativa.";
 }
 
 export const BODY = {
