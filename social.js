@@ -1,4 +1,4 @@
-import { phoneOf } from "./limits.js";
+import { phoneOf, samePhone } from "./limits.js";
 import { readStore, writeStore } from "./store.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -20,15 +20,19 @@ function pairKey(a, b) {
   return [a, b].sort().join(":");
 }
 
+function hasPerson(row, phone) {
+  return (row.people || []).some((item) => samePhone(item, phone));
+}
+
 function activeOf(store, group, phone) {
   return Object.values(store).find(
-    (row) => row.group === group && row.people.includes(phone) && (row.state === "namoro" || row.state === "casamento")
+    (row) => row.group === group && hasPerson(row, phone) && (row.state === "namoro" || row.state === "casamento")
   );
 }
 
 function pendingFor(store, group, phone) {
   return Object.values(store).find(
-    (row) => row.group === group && row.to === phone && row.state.startsWith("pedido") && Date.now() - row.at < DAY
+    (row) => row.group === group && samePhone(row.to, phone) && row.state.startsWith("pedido") && Date.now() - row.at < DAY
   );
 }
 
@@ -50,7 +54,7 @@ export async function namorar(msg, mention) {
     return `*${label(msg, me)}* e *${label(msg, incoming.from, incoming.fromName)}* estão namorando.`;
   }
   if (!mention) return "Marca a pessoa: *!namorar @fulano*.";
-  if (mention === me) return "Sozinho não conta.";
+  if (samePhone(mention, me)) return "Sozinho não conta.";
   if (activeOf(store, group, me) || activeOf(store, group, mention)) {
     return "Alguém desse par já está em um relacionamento neste grupo.";
   }
@@ -76,7 +80,7 @@ export async function casar(msg, mention) {
   }
   if (!mention) return "Marca quem você já namora: *!casar @*.";
   const row = activeOf(store, group, me);
-  if (!row || row.state !== "namoro" || !row.people.includes(mention)) {
+  if (!row || row.state !== "namoro" || !hasPerson(row, mention)) {
     return "Só dá para casar com quem você já namora neste grupo.";
   }
   row.previous = row.state;
@@ -104,7 +108,7 @@ export async function separar(msg) {
   }
   const row = activeOf(store, group, me);
   if (!row) return "Você não está em um relacionamento neste grupo.";
-  const other = row.people.find((phone) => phone !== me);
+  const other = row.people.find((phone) => !samePhone(phone, me));
   row.names = { ...(row.names || {}), [me]: label(msg, me) };
   row.previous = row.state;
   row.state = "pedido-separacao";
@@ -144,7 +148,7 @@ export async function celibar(msg) {
   let removed = 0;
   for (const key of Object.keys(store)) {
     const row = store[key];
-    if (row.group === group && row.people.includes(me)) {
+    if (row.group === group && hasPerson(row, me)) {
       delete store[key];
       removed += 1;
     }
@@ -171,7 +175,7 @@ export async function trair(msg, mention) {
   if (!row) return "Você não está em um relacionamento para trair.";
   row.betrayals.push({ with: mention, at: Date.now() });
   await writeStore("social", store);
-  const other = row.people.find((phone) => phone !== me);
+  const other = row.people.find((phone) => !samePhone(phone, me));
   return `*${label(msg, me)}* traiu *${label(msg, other, row.names?.[other])}* com *${label(msg, mention)}*. Ficou na ficha. O relacionamento continua.`;
 }
 
@@ -180,9 +184,9 @@ export async function ficha(msg) {
   if (!group) return "A ficha é no grupo.";
   const me = phoneOf(msg.sender);
   const store = await load();
-  const row = Object.values(store).find((item) => item.group === group && item.people.includes(me) && !item.state.startsWith("pedido"));
+  const row = Object.values(store).find((item) => item.group === group && hasPerson(item, me) && !item.state.startsWith("pedido"));
   if (!row) return "Você não tem relacionamento neste grupo.";
-  const other = row.people.find((phone) => phone !== me);
+  const other = row.people.find((phone) => !samePhone(phone, me));
   const extras = row.betrayals.length ? `\nTraições na ficha: *${row.betrayals.length}*.` : "";
   return `Você está em *${row.state}* com *${label(msg, other, row.names?.[other])}*.${extras}`;
 }

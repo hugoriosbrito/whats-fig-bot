@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { phoneOf } from "./limits.js";
+import { phoneOf, samePhone } from "./limits.js";
 import { readStore, writeStore } from "./store.js";
 import {
   BAIT_MAX,
@@ -322,7 +322,7 @@ export async function stopAnswer(msg, rest) {
   const found = [...stops.entries()].find(([, game]) => Date.now() <= game.endsAt);
   if (!found) return "Não tem stop esperando resposta.";
   const [group, game] = found;
-  if (game.answers.some((entry) => entry.user === phone)) return "Você já respondeu este stop.";
+  if (game.answers.some((entry) => samePhone(entry.user, phone))) return "Você já respondeu este stop.";
   const values = parseStopResponse(rest, game.categories);
   if (!Object.keys(values).length) {
     return `Não entendi. Manda assim: *!stop-resp* ${game.categories[0]}: palavra`;
@@ -350,7 +350,7 @@ export function stopEnd(msg) {
   const group = groupOf(msg);
   const game = group && stops.get(group);
   if (!game) return null;
-  if (game.host !== phoneOf(msg.sender)) return { text: "Só quem começou pode encerrar com *!stop-fim*." };
+  if (!samePhone(game.host, phoneOf(msg.sender))) return { text: "Só quem começou pode encerrar com *!stop-fim*." };
   stops.delete(group);
   return { game, group };
 }

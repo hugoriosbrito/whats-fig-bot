@@ -66,6 +66,22 @@ export function phoneOf(jid) {
   return senderKey(jid);
 }
 
+// Celular brasileiro chega com e sem o 9.
+// 55 + DDD (2) + 9 + 8 dígitos = 13, ou 55 + DDD + número antigo de 8 = 12.
+// No WhatsApp o formato longo também aparece com 14 dígitos.
+export function samePhone(a, b) {
+  const left = phoneOf(a);
+  const right = phoneOf(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const mobile = (value) => {
+    if (!value.startsWith("55") || value[4] !== "9") return value;
+    if (value.length !== 13 && value.length !== 14) return value;
+    return `${value.slice(0, 4)}${value.slice(5)}`;
+  };
+  return mobile(left) === mobile(right);
+}
+
 export function isAdmin(jid) {
   return config.adminNumbers.includes(phoneOf(jid));
 }
