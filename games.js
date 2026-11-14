@@ -165,32 +165,34 @@ export async function slotsRank(msg) {
   return rows.map((row, i) => `${i + 1}. ${row.phone} — ${row.wins}`).join("\n");
 }
 
-const chambers = new Map();
+const CHAMBER = "roleta-tambor";
 
 export async function roulette(msg) {
   const group = groupOf(msg);
   if (!group) return "A roleta russa é só no grupo.";
-  let chamber = chambers.get(group);
-  if (!chamber || chamber.bullet >= 6) {
+  const drums = (await readStore(CHAMBER)) || {};
+  let chamber = drums.tambor;
+  if (!chamber || chamber.shot >= 6 || chamber.shot > chamber.bullet) {
     chamber = { bullet: Math.floor(Math.random() * 6), shot: 0 };
-    chambers.set(group, chamber);
   }
   const dead = chamber.shot === chamber.bullet;
   chamber.shot += 1;
+  if (dead || chamber.shot >= 6) delete drums.tambor;
+  else drums.tambor = chamber;
+  await writeStore(CHAMBER, drums);
+
   const phone = phoneOf(msg.sender);
+  const who = msg.name || phone;
   const store = await readStore("roleta");
-  const key = `${group}:${phone}`;
-  const row = store[key] || { survived: 0, died: 0 };
-  if (dead) {
-    row.died += 1;
-    chambers.delete(group);
-  } else {
-    row.survived += 1;
-  }
+  const key = phone;
+  const row = store[key] || { survived: 0, died: 0, name: who };
+  row.name = who;
+  if (dead) row.died += 1;
+  else row.survived += 1;
   store[key] = row;
   await writeStore("roleta", store);
-  if (dead) return `*${phone}* puxou o gatilho e a bala saiu. O tambor recarrega.`;
-  return `*${phone}* sobreviveu. Já foram ${chamber.shot} de 6.`;
+  if (dead) return `*${who}* puxou o gatilho e a bala saiu. O tambor recarrega.`;
+  return `*${who}* sobreviveu. Já foram ${chamber.shot} de 6.`;
 }
 
 export async function rouletteRank(msg) {
@@ -198,8 +200,8 @@ export async function rouletteRank(msg) {
   if (!group) return "O ranking da roleta é no grupo.";
   const store = await readStore("roleta");
   const rows = Object.entries(store)
-    .filter(([key]) => key.startsWith(`${group}:`))
-    .map(([key, data]) => ({ phone: key.split(":").pop(), survived: data.survived }))
+    .filter(([, data]) => data && typeof data.survived === "number")
+    .map(([key, data]) => ({ phone: data.name || key.split(":").pop(), survived: data.survived }))
     .sort((a, b) => b.survived - a.survived)
     .slice(0, 10);
   if (!rows.length) return "Ninguém jogou roleta neste grupo.";

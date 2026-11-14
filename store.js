@@ -80,21 +80,31 @@ export async function readStore(name) {
   return data;
 }
 
+async function persistPair(name, key, value) {
+  if (!hasDatabase()) return;
+  await database().query(
+    `INSERT INTO bot_store (name, item_key, data) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE data = VALUES(data)`,
+    [name, key.slice(0, 191), JSON.stringify(value)]
+  );
+}
+
+async function deletePair(name, key) {
+  if (!hasDatabase()) return;
+  await database().query("DELETE FROM bot_store WHERE name = ? AND item_key = ?", [name, key.slice(0, 191)]);
+}
+
 export async function writeStore(name, data) {
+  const previous = memory.get(name) || {};
   memory.set(name, data);
   if (!hasDatabase()) {
     await writeFileStore(name, data);
     return;
   }
-  const db = database();
-  const keys = Object.keys(data);
-  await db.query("DELETE FROM bot_store WHERE name = ?", [name]);
-  for (const key of keys) {
-    await db.query(
-      "INSERT INTO bot_store (name, item_key, data) VALUES (?, ?, ?)",
-      [name, key.slice(0, 191), JSON.stringify(data[key])]
-    );
+  for (const key of Object.keys(previous)) {
+    if (!(key in data)) await deletePair(name, key);
   }
+  for (const key of Object.keys(data)) await persistPair(name, key, data[key]);
 }
 
 export function remember(name, data) {
