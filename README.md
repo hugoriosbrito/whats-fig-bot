@@ -6,7 +6,7 @@ Bot de WhatsApp que transforma foto em figurinha. Feito com Baileys e Sharp, sem
 
 Mande no privado:
 
-- `!menu` mostra as categorias, com botões. O número ou `!menu jogos` abre uma delas
+- `!menu` mostra as categorias. O número ou `!menu jogos` abre uma delas
 - foto com a legenda `!fig` vira figurinha inteira (`fit`)
 - vídeo de até 10 segundos com `!fig` vira figurinha animada
 - `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Um post com várias fotos vira uma figurinha por foto

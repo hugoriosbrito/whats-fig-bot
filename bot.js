@@ -19,7 +19,7 @@ import { synthesize, ttsEnabled, TtsError } from "./fish.js";
 import { downloadMedia, resolveXMedia, xLinkOf } from "./link.js";
 import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
 import { HELP, menuCategory, menuHome } from "./menu.js";
-import { buttonContent, buttonReplyId } from "./buttons.js";
+import { buttonContent } from "./buttons.js";
 import { announceBusy, knownPhones, rememberUser, startAnnounce, stopAnnounce } from "./announce.js";
 import * as games from "./games.js";
 import * as jokes from "./jokes.js";
@@ -39,8 +39,6 @@ function unwrapMessage(message) {
 }
 
 function extractBody(msg) {
-  const tapped = buttonReplyId(msg.message);
-  if (tapped) return tapped;
   const message = unwrapMessage(msg.message);
   return (
     message?.conversation ||
@@ -84,9 +82,9 @@ function quotedMedia(msg) {
   return null;
 }
 
-async function sendText(sock, jid, text, quote, buttons) {
+async function sendText(sock, jid, text, quote) {
   await new Promise((resolve) => setTimeout(resolve, 800));
-  const content = typeof text === "string" ? buttonContent(text, buttons) : text;
+  const content = typeof text === "string" ? buttonContent(text) : text;
   await sock.sendMessage(jid, content, quote ? { quoted: quote } : undefined);
 }
 
@@ -634,7 +632,7 @@ async function handleFeature(sock, msg, cmd, args, rest, mention) {
 async function deliver(sock, msg, result) {
   const reply = replyOf(result);
   if (!reply?.text) return;
-  await sendText(sock, msg.key.remoteJid, reply.text, msg, reply.buttons);
+  await sendText(sock, msg.key.remoteJid, reply.text, msg);
 }
 
 async function handleIncoming(sock, msg) {
@@ -660,9 +658,9 @@ async function handleIncoming(sock, msg) {
         await sendText(sock, chat, "Não achei essa categoria. Manda *!menu*.", msg);
         return;
       }
-      await sendText(sock, chat, home.text, msg, home.buttons);
+      await sendText(sock, chat, home.text, msg);
     } else if (cmd === "ajuda" || cmd === "help") {
-      await sendText(sock, chat, HELP, msg, [{ id: "!menu", text: "Abrir menu" }]);
+      await sendText(sock, chat, HELP, msg);
     } else if (["resto", "limite", "cota"].includes(cmd)) {
       const sticker = await checkQuota(senderOf(msg), "fig");
       const voice = await checkQuota(senderOf(msg), "tts");
@@ -681,7 +679,7 @@ async function handleIncoming(sock, msg) {
       await handleVoice(sock, msg, ttsTextFrom([rest]));
     } else if ("123456".includes(cmd) && cmd.length === 1) {
       const page = menuCategory(cmd, admin);
-      await sendText(sock, chat, page.text, msg, page.buttons);
+      await sendText(sock, chat, page.text, msg);
     } else if (["vip", "tirarvip", "vips"].includes(cmd)) {
       await handleAdmin(sock, msg, cmd, args);
     } else if (cmd === "anunciar") {

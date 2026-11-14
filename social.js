@@ -51,11 +51,7 @@ export async function namorar(msg, mention) {
   store[key] = { group, people: [me, mention], from: me, to: mention, state: "pedido-namoro", at: Date.now(), betrayals: [] };
   await writeStore("social", store);
   return {
-    text: `*${me}* chamou *${mention}* para namorar.\nPara aceitar, manda *!namorar*. Para recusar, *!recusar*.`,
-    buttons: [
-      { id: "!namorar", text: "Aceitar" },
-      { id: "!recusar", text: "Recusar" },
-    ],
+    text: `*${me}* chamou *${mention}* para namorar.\n*!namorar* aceita. *!recusar* recusa.`,
   };
 }
 
@@ -83,11 +79,7 @@ export async function casar(msg, mention) {
   row.at = Date.now();
   await writeStore("social", store);
   return {
-    text: `*${me}* pediu *${mention}* em casamento. *!casar* aceita, *!recusar* recusa.`,
-    buttons: [
-      { id: "!casar", text: "Aceitar" },
-      { id: "!recusar", text: "Recusar" },
-    ],
+    text: `*${me}* pediu *${mention}* em casamento.\n*!casar* aceita. *!recusar* recusa.`,
   };
 }
 
@@ -113,11 +105,7 @@ export async function separar(msg) {
   row.at = Date.now();
   await writeStore("social", store);
   return {
-    text: `*${me}* pediu para terminar com *${other}*. *!separar* confirma. Se ninguém responder em 24 h, continua tudo como está.`,
-    buttons: [
-      { id: "!separar", text: "Confirmar" },
-      { id: "!recusar", text: "Recusar" },
-    ],
+    text: `*${me}* pediu para terminar com *${other}*.\n*!separar* confirma. *!recusar* mantém. Em 24 h sem resposta, continua tudo como está.`,
   };
 }
 

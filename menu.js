@@ -16,10 +16,6 @@ const CATEGORIES = [
 *!emoji* 😀 🔥 — junta dois emojis numa figurinha.
 
 Também vale responder a mídia, ou mandar *!fig* com um link de foto, vídeo ou GIF do X.`,
-    buttons: [
-      { id: "!fig", text: "Como fazer" },
-      { id: "!emoji", text: "Dois emojis" },
-    ],
   },
   {
     id: "2",
@@ -32,10 +28,6 @@ Também vale responder a mídia, ou mandar *!fig* com um link de foto, vídeo ou
 *!tts seu texto* — eu falo o texto.
 
 Os dois primeiros gastam uma figurinha do dia e entram na mesma fila.`,
-    buttons: [
-      { id: "!tts ", text: "Falar um texto" },
-      { id: "!tomp3", text: "Virar áudio" },
-    ],
   },
   {
     id: "3",
@@ -51,11 +43,6 @@ Os dois primeiros gastam uma figurinha do dia e entram na mesma fila.`,
 *!stop* — letra e categorias. A resposta vai no meu privado.
 
 Jogos gastam o limite de figurinha do dia.`,
-    buttons: [
-      { id: "!pescar", text: "Pescar" },
-      { id: "!slots", text: "Caça-níquel" },
-      { id: "!anagrama", text: "Anagrama" },
-    ],
   },
   {
     id: "4",
@@ -72,10 +59,6 @@ Jogos gastam o limite de figurinha do dia.`,
 *!trair* @pessoa — registra na ficha.
 *!relacionamento* — a sua ficha.
 *!relacionamentos* — a lista do grupo.`,
-    buttons: [
-      { id: "!relacionamento", text: "Minha ficha" },
-      { id: "!relacionamentos", text: "O grupo" },
-    ],
   },
   {
     id: "5",
@@ -92,11 +75,6 @@ Jogos gastam o limite de figurinha do dia.`,
 *!pecar* e *!meus-pecados*.
 *!violencia*, *!morreu*, *!genshin*, *!hora*.
 *!pinto* — medição no grupo, uma a cada 3 dias. *!pinto-ranking* mostra o grupo.`,
-    buttons: [
-      { id: "!biscoito", text: "Biscoito" },
-      { id: "!pinto", text: "Medir" },
-      { id: "!hora", text: "Que horas" },
-    ],
   },
   {
     id: "6",
@@ -111,10 +89,6 @@ Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeco
 Áudios: ${config.ttsDailyLimit} por dia.
 
 VIP é uma cota maior, cadastrada pelo admin. O *!resto* mostra o seu limite.`,
-    buttons: [
-      { id: "!resto", text: "Meus limites" },
-      { id: "!ajuda", text: "Ajuda" },
-    ],
   },
 ];
 
@@ -124,7 +98,6 @@ export function menuHome(admin) {
     : "";
   return {
     text: `*FigBot*\n\n*1* Figurinhas\n*2* Mídia\n*3* Jogos\n*4* Relacionamento\n*5* Zoeira\n*6* Conta\n\nManda o número ou *!menu jogos*.${extra}`,
-    buttons: CATEGORIES.slice(0, 3).map((item) => ({ id: `!menu ${item.id}`, text: item.title })),
   };
 }
 
@@ -136,7 +109,7 @@ export function menuCategory(name, admin) {
   if (found.id === "6" && admin) {
     text += "\n\n*!anunciar seu texto* avisa quem já usou o bot, em lotes de 5.\n*!anunciar-parar* interrompe.";
   }
-  return { text, buttons: found.buttons };
+  return { text };
 }
 
 export const HELP = `Como funciona:
