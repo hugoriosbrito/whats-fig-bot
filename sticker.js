@@ -25,6 +25,8 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
   } else if (mode === "stretch") {
     // Estica (distorce, mas ocupa tudo)
     pipeline = pipeline.resize(512, 512, { fit: "fill" });
+  } else if (mode === "top" || mode === "bottom") {
+    pipeline = pipeline.resize(512, 512, { fit: "cover", position: mode });
   } else {
     // Padrão: cabe inteira, fundo transparente nas sobras
     pipeline = pipeline.resize(512, 512, {
@@ -43,6 +45,12 @@ function videoFilter(mode, fps) {
     return `${upright},scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
   }
   if (mode === "stretch") return `${upright},scale=512:512`;
+  if (mode === "top") {
+    return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512:0:0`;
+  }
+  if (mode === "bottom") {
+    return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512:0:ih-512`;
+  }
   return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512`;
 }
 

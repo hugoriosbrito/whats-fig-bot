@@ -75,7 +75,9 @@ if (!installed()) {
 
 if (process.env.DATABASE_URL) {
   const { setupDatabase } = await import("./db.js");
+  const { setupStore } = await import("./store.js");
   await setupDatabase();
+  await setupStore();
   console.log("Banco MySQL conectado.");
 }
 

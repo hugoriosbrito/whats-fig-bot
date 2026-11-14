@@ -6,13 +6,17 @@ Bot de WhatsApp que transforma foto em figurinha. Feito com Baileys e Sharp, sem
 
 Mande no privado:
 
-- `!menu` mostra as opções
+- `!menu` mostra as categorias, com botões. O número ou `!menu jogos` abre uma delas
 - foto com a legenda `!fig` vira figurinha inteira (`fit`)
 - vídeo de até 10 segundos com `!fig` vira figurinha animada
 - `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Um post com várias fotos vira uma figurinha por foto
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem
+- `!fig top` corta pela parte de cima e `!fig bottom` pela de baixo
+- `!emoji` seguido de dois emojis junta os dois numa figurinha
+- `!tomp3` responde um vídeo ou áudio e devolve o som
+- `!tomp4` responde uma figurinha animada ou GIF e devolve o vídeo
 - sem modo, foto e link usam `fit`; vídeo enviado no WhatsApp usa `fill`
 - `!tts seu texto` vira uma mensagem de voz (Fish Audio, modelo gratuito S2.1 Pro)
 - `!resto` mostra quantas figurinhas e áudios ainda restam hoje
@@ -27,6 +31,8 @@ O número admin fica em `ADMIN_NUMBERS` no `.env`. Só esses números podem cada
 - responder a mensagem da pessoa com `!vip 50` também funciona
 - `!tirarvip 5511999998888` volta a pessoa ao limite normal
 - `!vips` lista os VIPs cadastrados
+- `!anunciar seu texto` manda a novidade no privado de quem já usou o bot, em lotes de 5, com pausa entre as mensagens
+- `!anunciar-parar` interrompe o anúncio que está saindo
 
 A lista fica no MySQL quando `DATABASE_URL` existe. Sem banco, fica em `data/vips.json`.
 

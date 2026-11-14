@@ -18,40 +18,15 @@ import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
 import { downloadMedia, resolveXMedia, xLinkOf } from "./link.js";
 import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
+import { HELP, menuCategory, menuHome } from "./menu.js";
+import { buttonContent, buttonReplyId } from "./buttons.js";
+import { announceBusy, knownPhones, rememberUser, startAnnounce, stopAnnounce } from "./announce.js";
+import * as games from "./games.js";
+import * as jokes from "./jokes.js";
+import * as social from "./social.js";
+import { emojiSticker, removeFile, toMp3, toMp4 } from "./media.js";
 
 const log = pino({ level: process.env.LOG_LEVEL || "info" });
-
-const MENU = `*FigBot* — escolha uma opção:
-
-*1* Criar figurinha
-Mande uma foto ou um vídeo com a legenda *!fig*.
-Também vale responder a mídia com *!fig*.
-Ou mande *!fig* com um link de foto, vídeo ou GIF do X.
-
-*2* Meus limites
-Mande *!resto* para ver quantas restam hoje.
-O máximo é ${config.dailyLimit} por dia.
-
-*3* Ajuda
-Mande *!ajuda*.
-
-*4* Falar um texto
-Mande *!tts* e o texto. Exemplo: *!tts bom dia a todos*.
-
-*5* VIP
-Quem tem cota maior vê o próprio limite em *!resto*.`;
-
-const HELP = `Como funciona:
-
-- Foto com *!fig* vira figurinha 512x512, inteira.
-- Vídeo de até ${config.maxVideoSeconds}s com *!fig* vira figurinha animada, preenchendo o quadrado.
-- *!fig* com um link de foto, vídeo ou GIF do X (x.com ou twitter.com) faz a figurinha inteira e apaga o arquivo depois.
-- *!fig fill* preenche e *!fig stretch* estica. *!fig fit* cabe inteira.
-- Cada número tem ${config.dailyLimit} figurinhas por dia e ${config.cooldownSeconds}s entre cada uma.
-- VIP tem a cota cadastrada pelo admin, no lugar da padrão.
-- *!tts seu texto* vira uma mensagem de voz (até ${config.ttsMaxChars} caracteres).
-- Cada número tem ${config.ttsDailyLimit} áudios por dia e ${config.ttsCooldownSeconds}s entre cada um.
-- Funciona no privado e no grupo. Sem comando, eu fico quieto.`;
 
 function unwrapMessage(message) {
   return (
@@ -64,6 +39,8 @@ function unwrapMessage(message) {
 }
 
 function extractBody(msg) {
+  const tapped = buttonReplyId(msg.message);
+  if (tapped) return tapped;
   const message = unwrapMessage(msg.message);
   return (
     message?.conversation ||
@@ -72,6 +49,13 @@ function extractBody(msg) {
     message?.videoMessage?.caption ||
     ""
   ).trim();
+}
+
+function mentionOf(msg) {
+  const message = unwrapMessage(msg.message);
+  const ctx = message?.extendedTextMessage?.contextInfo;
+  const jid = ctx?.mentionedJid?.[0];
+  return jid ? phoneOf(jid) : "";
 }
 
 function parseCommand(body) {
@@ -100,9 +84,16 @@ function quotedMedia(msg) {
   return null;
 }
 
-async function sendText(sock, jid, text, quote) {
+async function sendText(sock, jid, text, quote, buttons) {
   await new Promise((resolve) => setTimeout(resolve, 800));
-  await sock.sendMessage(jid, { text }, quote ? { quoted: quote } : undefined);
+  const content = typeof text === "string" ? buttonContent(text, buttons) : text;
+  await sock.sendMessage(jid, content, quote ? { quoted: quote } : undefined);
+}
+
+function replyOf(value) {
+  if (!value) return null;
+  if (typeof value === "string") return { text: value };
+  return value;
 }
 
 async function downloadToTemp(sock, target) {
@@ -434,18 +425,244 @@ async function handleAdmin(sock, msg, action, args) {
   );
 }
 
+function withChat(msg) {
+  return { ...msg, sender: senderOf(msg), group: msg.key.remoteJid.endsWith("@g.us") ? msg.key.remoteJid : "" };
+}
+
+async function playGame(sock, msg) {
+  const guess = await games.anagramGuess(withChat(msg), extractBody(msg));
+  if (guess) await sendText(sock, msg.key.remoteJid, guess, msg);
+}
+
+async function spendFig(sock, msg) {
+  const sender = senderOf(msg);
+  const quota = await checkQuota(sender);
+  if (!quota.ok) {
+    await sendText(sock, msg.key.remoteJid, `Você usou suas *${quota.used}/${quota.limit}* figurinhas de hoje. Volte amanhã.`, msg);
+    return false;
+  }
+  const pace = await checkCooldown(sender);
+  if (!pace.ok) {
+    await sendText(sock, msg.key.remoteJid, `Calma aí. Aguarde *${pace.wait}s* antes da próxima.`, msg);
+    return false;
+  }
+  return quota;
+}
+
+async function handleAnnounce(sock, msg, text) {
+  const chat = msg.key.remoteJid;
+  if (!isAdmin(senderOf(msg))) {
+    await sendText(sock, chat, "Só o admin anuncia.", msg);
+    return;
+  }
+  if (announceBusy()) {
+    await sendText(sock, chat, "Já tem um anúncio em andamento.", msg);
+    return;
+  }
+  const phones = (await knownPhones()).filter((phone) => phone !== phoneOf(senderOf(msg)));
+  const started = await startAnnounce({
+    adminJid: chat,
+    text,
+    phones,
+    send: async (jid, body) => {
+      await sock.sendMessage(jid, { text: body });
+      return true;
+    },
+  });
+  if (!started.ok && started.reason === "empty") {
+    await sendText(sock, chat, "Manda *!anunciar* e o texto. Vou no privado de quem já usou o bot, em lotes de 5.", msg);
+  } else if (!started.ok && started.reason === "long") {
+    await sendText(sock, chat, "O texto passa de 500 caracteres.", msg);
+  } else if (!started.ok && started.reason === "nobody") {
+    await sendText(sock, chat, "Ainda não tenho ninguém na lista. Ela cresce quando as pessoas mandam um comando.", msg);
+  }
+}
+
+async function quotedFile(sock, msg) {
+  const message = unwrapMessage(msg.message);
+  const ctx = message?.extendedTextMessage?.contextInfo;
+  const quoted = unwrapMessage(ctx?.quotedMessage);
+  if (!quoted) return null;
+  const kind = quoted.videoMessage ? "video" : quoted.audioMessage ? "audio" : quoted.stickerMessage ? "sticker" : null;
+  if (!kind) return null;
+  const target = {
+    key: { remoteJid: msg.key.remoteJid, id: ctx.stanzaId, participant: ctx.participant, fromMe: false },
+    message: quoted,
+  };
+  const file = await downloadToTemp(sock, target);
+  return { file, kind };
+}
+
+async function charge(sock, msg) {
+  const quota = await spendFig(sock, msg);
+  if (!quota) return false;
+  await registerUse(msg.sender);
+  return true;
+}
+
+async function handleFeature(sock, msg, cmd, args, rest, mention) {
+  const chat = msg.key.remoteJid;
+
+  if (cmd === "pescar") {
+    if (!(await charge(sock, msg))) return true;
+    return deliver(sock, msg, await games.fish(msg)), true;
+  }
+  if (cmd === "pesca") return deliver(sock, msg, await games.fishStatus(msg)), true;
+  if (cmd === "pesca-ranking") return deliver(sock, msg, await games.fishRank(msg)), true;
+  if (cmd === "slots") {
+    if (!(await charge(sock, msg))) return true;
+    return deliver(sock, msg, await games.slots(msg, args[0])), true;
+  }
+  if (cmd === "slots-ranking") return deliver(sock, msg, await games.slotsRank(msg)), true;
+  if (cmd === "roleta") {
+    if (!(await charge(sock, msg))) return true;
+    return deliver(sock, msg, await games.roulette(msg)), true;
+  }
+  if (cmd === "roleta-ranking") return deliver(sock, msg, await games.rouletteRank(msg)), true;
+  if (cmd === "anagrama") {
+    if (!(await charge(sock, msg))) return true;
+    return deliver(sock, msg, games.anagramStart(msg)), true;
+  }
+  if (cmd === "anagrama-dica") return deliver(sock, msg, games.anagramHint(msg)), true;
+  if (cmd === "anagrama-parar") return deliver(sock, msg, games.anagramStop(msg)), true;
+  if (cmd === "anagrama-ranking") return deliver(sock, msg, await games.anagramRank(msg)), true;
+  if (cmd === "stop") {
+    if (!(await charge(sock, msg))) return true;
+    const started = games.stopStart(msg);
+    await deliver(sock, msg, started.text || started);
+    if (started.game) setTimeout(async () => {
+      const live = games.takeStop(started.group);
+      if (!live) return;
+      const text = await games.finishStop(live, started.group);
+      await sendText(sock, started.group, text);
+    }, 90_000);
+    return true;
+  }
+  if (cmd === "stop-resp") {
+    if (!(await charge(sock, msg))) return true;
+    return deliver(sock, msg, await games.stopAnswer(msg, rest)), true;
+  }
+  if (cmd === "stop-fim") {
+    const ended = games.stopEnd(msg);
+    if (!ended) return deliver(sock, msg, "Não tem stop neste grupo."), true;
+    if (ended.text) return deliver(sock, msg, ended.text), true;
+    return deliver(sock, msg, await games.finishStop(ended.game, ended.group)), true;
+  }
+  if (cmd === "stop-ranking") return deliver(sock, msg, await games.stopRank(msg)), true;
+
+  if (cmd === "namorar") return deliver(sock, msg, await social.namorar(msg, mention)), true;
+  if (cmd === "casar") return deliver(sock, msg, await social.casar(msg, mention)), true;
+  if (cmd === "separar") return deliver(sock, msg, await social.separar(msg)), true;
+  if (cmd === "recusar") return deliver(sock, msg, await social.recusar(msg)), true;
+  if (cmd === "celibar") return deliver(sock, msg, await social.celibar(msg)), true;
+  if (cmd === "coisar") return deliver(sock, msg, await social.coisar(msg, mention)), true;
+  if (cmd === "trair") return deliver(sock, msg, await social.trair(msg, mention)), true;
+  if (cmd === "relacionamento") return deliver(sock, msg, await social.ficha(msg)), true;
+  if (cmd === "relacionamentos") return deliver(sock, msg, await social.lista(msg)), true;
+
+  if (cmd === "biscoito") return deliver(sock, msg, jokes.biscoito()), true;
+  if (cmd === "cantada") return deliver(sock, msg, jokes.cantada(msg, mention)), true;
+  if (cmd === "violencia" || cmd === "violência") return deliver(sock, msg, jokes.violencia()), true;
+  if (cmd === "morreu") return deliver(sock, msg, jokes.morreu()), true;
+  if (cmd === "presente") return deliver(sock, msg, jokes.presente()), true;
+  if (cmd === "pix") return deliver(sock, msg, jokes.pix(msg, mention)), true;
+  if (cmd === "boleto") return deliver(sock, msg, jokes.boleto(msg)), true;
+  if (cmd === "pagar") return deliver(sock, msg, jokes.pagar()), true;
+  if (cmd === "aniversario" || cmd === "aniversário") return deliver(sock, msg, jokes.aniversario(msg, mention)), true;
+  if (cmd === "pecar") return deliver(sock, msg, await jokes.pecar(msg)), true;
+  if (cmd === "meus-pecados") return deliver(sock, msg, await jokes.meusPecados(msg)), true;
+  if (cmd === "genshin") return deliver(sock, msg, jokes.genshin()), true;
+  if (cmd === "hora" || cmd === "data") return deliver(sock, msg, jokes.hora()), true;
+  if (cmd === "pinto") return deliver(sock, msg, await jokes.pinto(msg, mention)), true;
+  if (cmd === "pinto-ranking") return deliver(sock, msg, await jokes.pintoRank(msg)), true;
+  if (cmd === "pinto-reset") return deliver(sock, msg, await jokes.pintoReset(msg)), true;
+
+  if (cmd === "emoji") {
+    const glyphs = [...rest].filter((char) => /\p{Extended_Pictographic}/u.test(char));
+    if (glyphs.length < 2) {
+      await sendText(sock, chat, "Manda dois emojis: *!emoji* 😀 🔥", msg);
+      return true;
+    }
+    const quota = await spendFig(sock, msg);
+    if (!quota) return true;
+    const { position, run } = enqueue(async () => {
+      const webp = await emojiSticker(glyphs[0], glyphs[1]);
+      await sock.sendMessage(chat, { sticker: webp }, { quoted: msg });
+      await registerUse(msg.sender);
+    });
+    const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
+    await sendText(sock, chat, `Juntando os emojis (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+    try {
+      await run;
+    } catch (error) {
+      await sendText(sock, chat, `Não consegui fazer a figurinha: ${error.message}`, msg);
+    }
+    return true;
+  }
+
+  if (cmd === "tomp3" || cmd === "tomp4") {
+    const quota = await spendFig(sock, msg);
+    if (!quota) return true;
+    const quoted = await quotedFile(sock, msg);
+    if (!quoted) {
+      await sendText(sock, chat, cmd === "tomp3" ? "Responde um vídeo ou áudio com *!tomp3*." : "Responde uma figurinha animada ou GIF com *!tomp4*.", msg);
+      return true;
+    }
+    const { position, run } = enqueue(async () => {
+      const out = cmd === "tomp3" ? await toMp3(quoted.file) : await toMp4(quoted.file);
+      const data = await fs.readFile(out);
+      if (cmd === "tomp3") await sock.sendMessage(chat, { audio: data, mimetype: "audio/mpeg" }, { quoted: msg });
+      else await sock.sendMessage(chat, { video: data, mimetype: "video/mp4" }, { quoted: msg });
+      await registerUse(msg.sender);
+      await removeFile(quoted.file);
+      await removeFile(out);
+    });
+    const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
+    await sendText(sock, chat, `Convertendo (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+    try {
+      await run;
+    } catch (error) {
+      await removeFile(quoted.file);
+      await sendText(sock, chat, error.message, msg);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function deliver(sock, msg, result) {
+  const reply = replyOf(result);
+  if (!reply?.text) return;
+  await sendText(sock, msg.key.remoteJid, reply.text, msg, reply.buttons);
+}
+
 async function handleIncoming(sock, msg) {
   try {
     if (!msg.message || msg.key.fromMe || msg.key.remoteJid === "status@broadcast") return;
     const chat = msg.key.remoteJid;
-    const parsed = parseCommand(extractBody(msg));
-    if (!parsed) return;
+    const body = extractBody(msg);
+    const parsed = parseCommand(body);
+    if (!parsed) {
+      await playGame(sock, msg);
+      return;
+    }
 
     const { cmd, args, rest } = parsed;
+    const view = withChat(msg);
+    const mention = mentionOf(msg);
+    await rememberUser(senderOf(msg));
+    const admin = isAdmin(senderOf(msg));
+
     if (["menu", "start", "oi", "ola", "olá"].includes(cmd)) {
-      await sendText(sock, chat, MENU, msg);
+      const home = args[0] ? menuCategory(args[0], admin) : menuHome(admin);
+      if (!home) {
+        await sendText(sock, chat, "Não achei essa categoria. Manda *!menu*.", msg);
+        return;
+      }
+      await sendText(sock, chat, home.text, msg, home.buttons);
     } else if (cmd === "ajuda" || cmd === "help") {
-      await sendText(sock, chat, HELP, msg);
+      await sendText(sock, chat, HELP, msg, [{ id: "!menu", text: "Abrir menu" }]);
     } else if (["resto", "limite", "cota"].includes(cmd)) {
       const sticker = await checkQuota(senderOf(msg), "fig");
       const voice = await checkQuota(senderOf(msg), "tts");
@@ -458,29 +675,26 @@ async function handleIncoming(sock, msg) {
       await sendText(sock, chat, `${stickerLine}\n${voiceLine}`, msg);
     } else if (["fig", "s", "sticker"].includes(cmd)) {
       const requested = (args[0] || "").toLowerCase();
-      const mode = ["fit", "fill", "stretch"].includes(requested) ? requested : null;
+      const mode = ["fit", "fill", "stretch", "top", "bottom"].includes(requested) ? requested : null;
       await handleSticker(sock, msg, mode);
     } else if (["tts", "fala", "voz", "audio", "áudio"].includes(cmd)) {
       await handleVoice(sock, msg, ttsTextFrom([rest]));
-    } else if (cmd === "1") {
-      await sendText(sock, chat, "Beleza. Manda a foto ou o vídeo com a legenda *!fig*, ou *!fig* com um link de foto, vídeo ou GIF do X.", msg);
-    } else if (cmd === "2") {
-      const sticker = await checkQuota(senderOf(msg), "fig");
-      const voice = await checkQuota(senderOf(msg), "tts");
-      await sendText(
-        sock,
-        chat,
-        `Figurinhas: *${sticker.used || 0}/${sticker.limit}* hoje.\nÁudios: *${voice.used || 0}/${voice.limit}* hoje.`,
-        msg
-      );
-    } else if (cmd === "3") {
-      await sendText(sock, chat, HELP, msg);
-    } else if (cmd === "4") {
-      await sendText(sock, chat, `Manda *!tts* e o texto. Exemplo: *!tts bom dia a todos*.`, msg);
-    } else if (cmd === "5") {
-      await sendText(sock, chat, "VIP é uma cota maior, cadastrada pelo admin. O *!resto* mostra o seu limite.", msg);
+    } else if ("123456".includes(cmd) && cmd.length === 1) {
+      const page = menuCategory(cmd, admin);
+      await sendText(sock, chat, page.text, msg, page.buttons);
     } else if (["vip", "tirarvip", "vips"].includes(cmd)) {
       await handleAdmin(sock, msg, cmd, args);
+    } else if (cmd === "anunciar") {
+      await handleAnnounce(sock, msg, rest);
+    } else if (cmd === "anunciar-parar") {
+      if (!admin) {
+        await sendText(sock, chat, "Só o admin para um anúncio.", msg);
+        return;
+      }
+      const stopped = await stopAnnounce();
+      await sendText(sock, chat, stopped ? "Vou parar o anúncio depois da mensagem que já está saindo." : "Não tem anúncio em andamento.", msg);
+    } else if (await handleFeature(sock, view, cmd, args, rest, mention)) {
+      /* o handler já respondeu */
     }
   } catch (error) {
     log.error({ err: error }, "erro ao processar mensagem");
