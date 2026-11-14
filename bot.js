@@ -59,8 +59,38 @@ function mentionInfo(msg) {
   const message = unwrapMessage(msg.message);
   const ctx = message?.extendedTextMessage?.contextInfo;
   const jid = ctx?.mentionedJid?.[0];
-  if (!jid) return { phone: "", name: "" };
-  return { phone: phoneOf(jid), name: cleanName(ctx.mentionName || ctx.quotedName) || phoneOf(jid) };
+  if (!jid) return { jid: "", phone: "", name: "" };
+  const phone = jid.endsWith("@lid") ? "" : phoneOf(jid);
+  return { jid, phone, name: cleanName(ctx.mentionName || ctx.quotedName) };
+}
+
+function phoneFromGroup(group, jid) {
+  const meta = groupCache.get(group);
+  const found = meta?.participants?.find((person) => person.id === jid || person.lid === jid);
+  return phoneOf(found?.phoneNumber || "");
+}
+
+async function phoneForJid(sock, jid, group) {
+  if (!jid || !jid.endsWith("@lid")) return phoneOf(jid);
+  const known = phoneFromGroup(group, jid) || lidPhones.get(jid);
+  if (known) return known;
+  try {
+    const pn = await sock.signalRepository.lidMapping.getPNForLID(jid);
+    const phone = phoneOf(pn);
+    if (phone) lidPhones.set(jid, phone);
+    return phone;
+  } catch (error) {
+    log.warn({ err: error, jid }, "não achei o telefone desse id");
+    return "";
+  }
+}
+
+async function resolveMention(sock, msg) {
+  const mention = mentionInfo(msg);
+  if (!mention.jid || mention.phone) return mention;
+  const group = msg.key.remoteJid.endsWith("@g.us") ? msg.key.remoteJid : "";
+  mention.phone = await phoneForJid(sock, mention.jid, group);
+  return mention;
 }
 
 function parseCommand(body) {
@@ -436,13 +466,13 @@ function nameInGroup(jid, phone) {
   return cleanName(found?.notify || found?.name || found?.verifiedName);
 }
 
-function withChat(msg) {
-  const mention = mentionInfo(msg);
+function withChat(msg, mention = mentionInfo(msg), senderPhone = "") {
   const group = msg.key.remoteJid.endsWith("@g.us") ? msg.key.remoteJid : "";
+  const sender = senderPhone || phoneOf(senderOf(msg));
   return {
     ...msg,
-    sender: senderOf(msg),
-    name: cleanName(msg.pushName) || nameInGroup(group, phoneOf(senderOf(msg))) || phoneOf(senderOf(msg)),
+    sender: sender ? `${sender}@s.whatsapp.net` : senderOf(msg),
+    name: cleanName(msg.pushName) || nameInGroup(group, sender) || sender,
     group,
     mention: mention.phone || "",
     mentionName: mention.name || nameInGroup(group, mention.phone) || "",
@@ -676,9 +706,15 @@ async function handleIncoming(sock, msg) {
         /* sem a lista, a mensagem segue com o nome de quem enviou */
       }
     }
-    const view = withChat(msg);
-    const mention = mentionInfo(msg).phone;
-    await rememberUser(senderOf(msg));
+    const resolved = await resolveMention(sock, msg);
+    const senderPhone = await phoneForJid(sock, senderOf(msg), chat.endsWith("@g.us") ? chat : "");
+    const view = withChat(msg, resolved, senderPhone);
+    const mention = resolved.phone;
+    if (resolved.jid && !mention && ["namorar", "casar", "trair", "pix", "aniversario", "aniversário", "pinto", "cantada"].includes(cmd)) {
+      await sendText(sock, chat, "Não consegui identificar o telefone dessa marcação. Pede de novo marcando a pessoa.", msg);
+      return;
+    }
+    await rememberUser(view.sender);
     const admin = isAdmin(senderOf(msg));
 
     if (["menu", "start", "oi", "ola", "olá"].includes(cmd)) {
@@ -733,6 +769,7 @@ let reconnectTimer;
 let reconnectDelay = 15000;
 let starting = false;
 const groupCache = new Map();
+const lidPhones = new Map();
 
 async function start() {
   if (starting) return;
@@ -756,6 +793,11 @@ async function start() {
     shouldSyncHistoryMessage: () => false,
   });
   activeSock = sock;
+  sock.ev.on("lid-mapping.update", (mappings) => {
+    for (const mapping of mappings || []) {
+      if (mapping.lid && mapping.pn) lidPhones.set(mapping.lid, phoneOf(mapping.pn));
+    }
+  });
   sock.ev.on("groups.update", (updates) => {
     for (const update of updates) {
       if (update.id && update.participants) groupCache.set(update.id, update);
