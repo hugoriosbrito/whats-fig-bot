@@ -49,11 +49,18 @@ function extractBody(msg) {
   ).trim();
 }
 
-function mentionOf(msg) {
+function cleanName(value) {
+  const name = String(value || "").replace(/[\r\n*_`]/g, " ").trim();
+  if (!name || /^\d{8,}$/.test(name)) return "";
+  return name.slice(0, 40);
+}
+
+function mentionInfo(msg) {
   const message = unwrapMessage(msg.message);
   const ctx = message?.extendedTextMessage?.contextInfo;
   const jid = ctx?.mentionedJid?.[0];
-  return jid ? phoneOf(jid) : "";
+  if (!jid) return { phone: "", name: "" };
+  return { phone: phoneOf(jid), name: cleanName(ctx.mentionName || ctx.quotedName) || phoneOf(jid) };
 }
 
 function parseCommand(body) {
@@ -423,8 +430,23 @@ async function handleAdmin(sock, msg, action, args) {
   );
 }
 
+function nameInGroup(jid, phone) {
+  const meta = groupCache.get(jid);
+  const found = meta?.participants?.find((person) => phoneOf(person.id || person.jid || "") === phone);
+  return cleanName(found?.notify || found?.name || found?.verifiedName);
+}
+
 function withChat(msg) {
-  return { ...msg, sender: senderOf(msg), group: msg.key.remoteJid.endsWith("@g.us") ? msg.key.remoteJid : "" };
+  const mention = mentionInfo(msg);
+  const group = msg.key.remoteJid.endsWith("@g.us") ? msg.key.remoteJid : "";
+  return {
+    ...msg,
+    sender: senderOf(msg),
+    name: cleanName(msg.pushName) || nameInGroup(group, phoneOf(senderOf(msg))) || phoneOf(senderOf(msg)),
+    group,
+    mention: mention.phone || "",
+    mentionName: mention.name || nameInGroup(group, mention.phone) || "",
+  };
 }
 
 async function playGame(sock, msg) {
@@ -647,8 +669,15 @@ async function handleIncoming(sock, msg) {
     }
 
     const { cmd, args, rest } = parsed;
+    if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
+      try {
+        groupCache.set(chat, await sock.groupMetadata(chat));
+      } catch {
+        /* sem a lista, a mensagem segue com o nome de quem enviou */
+      }
+    }
     const view = withChat(msg);
-    const mention = mentionOf(msg);
+    const mention = mentionInfo(msg).phone;
     await rememberUser(senderOf(msg));
     const admin = isAdmin(senderOf(msg));
 

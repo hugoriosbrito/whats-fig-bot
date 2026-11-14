@@ -39,10 +39,16 @@ export function biscoito() {
   return line("biscoito");
 }
 
+function shown(msg, phone) {
+  if (phone && phone === msg.mention) return msg.mentionName || phone;
+  if (!phone || phone === phoneOf(msg.sender)) return msg.name || phoneOf(msg.sender);
+  return phone;
+}
+
 export function cantada(msg, mention) {
   if (!groupOf(msg)) return "Cantada é no grupo. Marca alguém ou deixa eu sortear.";
-  const who = mention || "alguém que estava quieto";
-  return `*${phoneOf(msg.sender)}* chegou em *${who}* com: ${line("cantada")}`;
+  const who = mention ? shown(msg, mention) : "alguém que estava quieto";
+  return `*${shown(msg)}* chegou em *${who}* com: ${line("cantada")}`;
 }
 
 export function violencia() {
@@ -60,7 +66,7 @@ export function presente() {
 export function pix(msg, mention) {
   if (!mention) return "Marca quem recebe o Pix fictício: *!pix @*.";
   const value = (Math.random() * 200 + 1).toFixed(2).replace(".", ",");
-  return `Pix *fictício* de R$ ${value} para *${mention}*. Não saiu dinheiro de lugar nenhum.`;
+  return `Pix *fictício* de R$ ${value} para *${shown(msg, mention)}*. Não saiu dinheiro de lugar nenhum.`;
 }
 
 export function boleto(msg) {
@@ -74,7 +80,7 @@ export function pagar() {
 
 export function aniversario(msg, mention) {
   if (!mention) return "Marca a pessoa: *!aniversario @*.";
-  return `Parabéns, *${mention}*. ${line("aniversario")}`;
+  return `Parabéns, *${shown(msg, mention)}*. ${line("aniversario")}`;
 }
 
 export async function pecar(msg) {
@@ -109,6 +115,7 @@ export function hora() {
 export async function pinto(msg, mention) {
   if (!groupOf(msg)) return "A medição é no grupo.";
   const phone = mention || phoneOf(msg.sender);
+  const label = shown(msg, phone);
   const key = `${msg.group}:${phone}`;
   const store = await readStore("pinto");
   const previous = store[key];
@@ -116,12 +123,12 @@ export async function pinto(msg, mention) {
   if (previous && now - previous.at < PINTO.cooldownMs) {
     const when = new Date(previous.at + PINTO.cooldownMs);
     const day = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short" }).format(when);
-    return `*${phone}* já mediu. A próxima é em *${day}*. Nota guardada: *${previous.score}*.`;
+    return `*${label}* já mediu. A próxima é em *${day}*. Nota guardada: *${previous.score}*.`;
   }
   const result = measurePinto();
-  store[key] = { ...result, at: now };
+  store[key] = { ...result, at: now, name: label };
   await writeStore("pinto", store);
-  return `Dr. FigBot mediu *${phone}*.\nFlácido: ${result.flaccid} cm\nEreto: ${result.erect} cm\nCircunferência: ${result.girth} cm\nCurvatura: ${result.curvature}°\nNota: *${result.score}*\n${pintoComment(result.score)}`;
+  return `Dr. FigBot mediu *${label}*.\nFlácido: ${result.flaccid} cm\nEreto: ${result.erect} cm\nCircunferência: ${result.girth} cm\nCurvatura: ${result.curvature}°\nNota: *${result.score}*\n${pintoComment(result.score)}`;
 }
 
 export async function pintoRank(msg) {
@@ -129,7 +136,7 @@ export async function pintoRank(msg) {
   const store = await readStore("pinto");
   const rows = Object.entries(store)
     .filter(([key]) => key.startsWith(`${msg.group}:`))
-    .map(([key, data]) => ({ phone: key.slice(msg.group.length + 1), score: data.score }))
+    .map(([key, data]) => ({ phone: data.name || key.slice(msg.group.length + 1), score: data.score }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 10);
   if (!rows.length) return "Ninguém mediu neste grupo. Manda *!pinto*.";

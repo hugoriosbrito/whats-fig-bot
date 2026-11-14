@@ -10,6 +10,12 @@ const COISAR = [
   "ficou do lado e fingiu que era coincidência",
 ];
 
+function label(msg, phone, saved) {
+  if (phone && phone === msg.mention && msg.mentionName) return msg.mentionName;
+  if ((!phone || phone === phoneOf(msg.sender)) && msg.name) return msg.name;
+  return saved || phone;
+}
+
 function pairKey(a, b) {
   return [a, b].sort().join(":");
 }
@@ -38,9 +44,10 @@ export async function namorar(msg, mention) {
   const incoming = pendingFor(store, group, me);
   if (!mention && incoming?.state === "pedido-namoro") {
     incoming.state = "namoro";
+    incoming.names = { [me]: label(msg, me), [incoming.from]: incoming.fromName || incoming.from };
     incoming.at = Date.now();
     await writeStore("social", store);
-    return `*${me}* e *${incoming.from}* estão namorando.`;
+    return `*${label(msg, me)}* e *${label(msg, incoming.from, incoming.fromName)}* estão namorando.`;
   }
   if (!mention) return "Marca a pessoa: *!namorar @fulano*.";
   if (mention === me) return "Sozinho não conta.";
@@ -48,10 +55,10 @@ export async function namorar(msg, mention) {
     return "Alguém desse par já está em um relacionamento neste grupo.";
   }
   const key = `${group}:${pairKey(me, mention)}`;
-  store[key] = { group, people: [me, mention], from: me, to: mention, state: "pedido-namoro", at: Date.now(), betrayals: [] };
+  store[key] = { group, people: [me, mention], from: me, fromName: label(msg, me), to: mention, toName: label(msg, mention), state: "pedido-namoro", at: Date.now(), betrayals: [] };
   await writeStore("social", store);
   return {
-    text: `*${me}* chamou *${mention}* para namorar.\n*!namorar* aceita. *!recusar* recusa.`,
+    text: `*${label(msg, me)}* chamou *${label(msg, mention)}* para namorar.\n*!namorar* aceita. *!recusar* recusa.`,
   };
 }
 
@@ -65,7 +72,7 @@ export async function casar(msg, mention) {
     incoming.state = "casamento";
     incoming.at = Date.now();
     await writeStore("social", store);
-    return `*${me}* e *${incoming.from}* casaram.`;
+    return `*${label(msg, me)}* e *${label(msg, incoming.from, incoming.fromName)}* casaram.`;
   }
   if (!mention) return "Marca quem você já namora: *!casar @*.";
   const row = activeOf(store, group, me);
@@ -79,7 +86,7 @@ export async function casar(msg, mention) {
   row.at = Date.now();
   await writeStore("social", store);
   return {
-    text: `*${me}* pediu *${mention}* em casamento.\n*!casar* aceita. *!recusar* recusa.`,
+    text: `*${label(msg, me)}* pediu *${label(msg, mention)}* em casamento.\n*!casar* aceita. *!recusar* recusa.`,
   };
 }
 
@@ -93,11 +100,12 @@ export async function separar(msg) {
     const key = Object.keys(store).find((item) => store[item] === incoming);
     delete store[key];
     await writeStore("social", store);
-    return `*${me}* e *${incoming.from}* se separaram.`;
+    return `*${label(msg, me)}* e *${label(msg, incoming.from, incoming.fromName)}* se separaram.`;
   }
   const row = activeOf(store, group, me);
   if (!row) return "Você não está em um relacionamento neste grupo.";
   const other = row.people.find((phone) => phone !== me);
+  row.names = { ...(row.names || {}), [me]: label(msg, me) };
   row.previous = row.state;
   row.state = "pedido-separacao";
   row.from = me;
@@ -105,7 +113,7 @@ export async function separar(msg) {
   row.at = Date.now();
   await writeStore("social", store);
   return {
-    text: `*${me}* pediu para terminar com *${other}*.\n*!separar* confirma. *!recusar* mantém. Em 24 h sem resposta, continua tudo como está.`,
+    text: `*${label(msg, me)}* pediu para terminar com *${label(msg, other, row.names?.[other])}*.\n*!separar* confirma. *!recusar* mantém. Em 24 h sem resposta, continua tudo como está.`,
   };
 }
 
@@ -150,7 +158,7 @@ export async function coisar(msg, mention) {
   if (!group) return "Isso é no grupo.";
   const me = phoneOf(msg.sender);
   const other = mention || "alguém do grupo";
-  return `*${me}* ${COISAR[Math.floor(Math.random() * COISAR.length)]} com *${other}*.`;
+  return `*${label(msg, me)}* ${COISAR[Math.floor(Math.random() * COISAR.length)]} com *${mention ? label(msg, mention) : other}*.`;
 }
 
 export async function trair(msg, mention) {
@@ -164,7 +172,7 @@ export async function trair(msg, mention) {
   row.betrayals.push({ with: mention, at: Date.now() });
   await writeStore("social", store);
   const other = row.people.find((phone) => phone !== me);
-  return `*${me}* traiu *${other}* com *${mention}*. Ficou na ficha. O relacionamento continua.`;
+  return `*${label(msg, me)}* traiu *${label(msg, other, row.names?.[other])}* com *${label(msg, mention)}*. Ficou na ficha. O relacionamento continua.`;
 }
 
 export async function ficha(msg) {
@@ -176,7 +184,7 @@ export async function ficha(msg) {
   if (!row) return "Você não tem relacionamento neste grupo.";
   const other = row.people.find((phone) => phone !== me);
   const extras = row.betrayals.length ? `\nTraições na ficha: *${row.betrayals.length}*.` : "";
-  return `Você está em *${row.state}* com *${other}*.${extras}`;
+  return `Você está em *${row.state}* com *${label(msg, other, row.names?.[other])}*.${extras}`;
 }
 
 export async function lista(msg) {
@@ -185,5 +193,5 @@ export async function lista(msg) {
   const store = await load();
   const rows = Object.values(store).filter((item) => item.group === group && (item.state === "namoro" || item.state === "casamento"));
   if (!rows.length) return "Ninguém está junto neste grupo.";
-  return rows.map((item) => `${item.people[0]} e ${item.people[1]} — ${item.state}`).join("\n");
+  return rows.map((item) => `${item.names?.[item.people[0]] || item.people[0]} e ${item.names?.[item.people[1]] || item.people[1]} — ${item.state}`).join("\n");
 }
