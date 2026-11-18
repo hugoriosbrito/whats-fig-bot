@@ -100,13 +100,14 @@ function runFfmpeg(inputPath, out, mode, fps) {
 
 // Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.
 export async function videoToSticker(inputPath, { mode = "fit" } = {}) {
-  for (const fps of [8, 6]) {
+  const fpsSteps = [15, 12, 10, 8, 6];
+  for (const fps of fpsSteps) {
     const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${fps}.webp`);
     try {
       return await runFfmpeg(inputPath, out, mode, fps);
     } catch (error) {
       await cleanup(out);
-      if (error.code === "STICKER_TIMEOUT" || fps === 6) throw error;
+      if (error.code === "STICKER_TIMEOUT" || fps === fpsSteps.at(-1)) throw error;
       if (error.code !== "STICKER_TOO_LARGE") throw error;
     }
   }
