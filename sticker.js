@@ -60,7 +60,6 @@ function runFfmpeg(inputPath, out, mode, fps) {
       "-y",
       "-threads", "1",
       "-filter_threads", "1",
-      "-an",
       "-i", inputPath,
       "-t", String(Math.min(config.maxVideoSeconds, 6)),
       "-vf", videoFilter(mode, fps),
@@ -96,6 +95,94 @@ function runFfmpeg(inputPath, out, mode, fps) {
       }
     });
   });
+}
+
+// O WhatsApp toca no máximo 10s de áudio numa figurinha, e a figurinha
+// feita de vídeo leva os 5 primeiros segundos do som original.
+const SOUND_SECONDS = 5;
+
+function runAudio(inputPath, out) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn("ffmpeg", [
+      "-y",
+      "-threads", "1",
+      "-i", inputPath,
+      "-t", String(SOUND_SECONDS),
+      "-vn",
+      "-map", "0:a:0?",
+      "-c:a", "libopus",
+      "-b:a", "32k",
+      "-ac", "1",
+      "-ar", "48000",
+      "-application", "voip",
+      out,
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    const timer = setTimeout(() => {
+      ffmpeg.kill();
+      reject(new Error("A extração do áudio demorou demais."));
+    }, 60_000);
+    let errorText = "";
+    ffmpeg.stderr.on("data", (chunk) => {
+      errorText = `${errorText}${chunk}`.slice(-4000);
+    });
+    ffmpeg.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error.code === "ENOENT" ? new Error("FFmpeg não está instalado neste servidor.") : error);
+    });
+    ffmpeg.on("close", async (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error("Não consegui tirar o áudio desse vídeo."));
+        return;
+      }
+      try {
+        const stat = await fs.stat(out);
+        resolve(stat.size > 0 ? out : null);
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+function hasAudioTrack(inputPath) {
+  return new Promise((resolve) => {
+    const probe = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "a:0",
+      "-show_entries", "stream=codec_type",
+      "-of", "csv=p=0",
+      inputPath,
+    ], { stdio: ["ignore", "pipe", "ignore"] });
+    let output = "";
+    const timer = setTimeout(() => {
+      probe.kill();
+      resolve(false);
+    }, 15_000);
+    probe.stdout.on("data", (chunk) => {
+      output += chunk;
+    });
+    probe.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    probe.on("close", () => {
+      clearTimeout(timer);
+      resolve(output.includes("audio"));
+    });
+  });
+}
+
+// Vídeo com som devolve o áudio em Opus. Vídeo mudo devolve null.
+export async function extractStickerAudio(inputPath) {
+  if (!(await hasAudioTrack(inputPath))) return null;
+  const out = path.join(os.tmpdir(), `figsom-${Date.now()}-${Math.floor(Math.random() * 1e6)}.ogg`);
+  try {
+    return await runAudio(inputPath, out);
+  } catch (error) {
+    await cleanup(out);
+    throw error;
+  }
 }
 
 // Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.

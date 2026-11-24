@@ -4,6 +4,8 @@ import {
   fetchLatestBaileysVersion,
   DisconnectReason,
   downloadMediaMessage,
+  generateWAMessageFromContent,
+  prepareWAMessageMedia,
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
@@ -12,7 +14,8 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
-import { imageToSticker, videoToSticker, assertSizeOk, cleanup } from "./sticker.js";
+import { imageToSticker, videoToSticker, extractStickerAudio, assertSizeOk, cleanup } from "./sticker.js";
+import { markSoundSticker, patchSoundSticker, rememberSound, uploadStickerAudio } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
@@ -131,6 +134,50 @@ function replyOf(value) {
   return value;
 }
 
+async function audioSeconds(file) {
+  try {
+    const { parseFile } = await import("music-metadata");
+    const { format } = await parseFile(file, { duration: true });
+    return Math.min(10, Math.max(1, Math.round(format.duration || 1)));
+  } catch {
+    return 1;
+  }
+}
+
+async function sendSticker(sock, chat, webp, quote, audioFile) {
+  let audio = null;
+  if (audioFile) {
+    try {
+      audio = await uploadStickerAudio(audioFile, {
+        upload: sock.waUploadToServer,
+        seconds: await audioSeconds(audioFile),
+      });
+    } catch (error) {
+      log.warn({ err: error }, "figurinha saiu sem o áudio");
+    }
+  }
+  if (!audio) {
+    await sock.sendMessage(chat, { sticker: webp }, { quoted: quote });
+    return;
+  }
+  webp = await markSoundSticker(webp, await fs.readFile(audioFile));
+  const prepared = await prepareWAMessageMedia(
+    { sticker: webp, isAnimated: true },
+    { upload: sock.waUploadToServer }
+  );
+  const sticker = prepared.stickerMessage;
+  sticker.isAnimated = true;
+  sticker.mimetype = "image/webp";
+  sticker.stickerSentTs = Date.now();
+  rememberSound(prepared, audio);
+  patchSoundSticker(prepared);
+  const full = generateWAMessageFromContent(chat, prepared, {
+    userJid: sock.user?.id,
+    quoted: quote,
+  });
+  await sock.relayMessage(chat, full.message, { messageId: full.key.id });
+}
+
 async function downloadToTemp(sock, target) {
   const tmp = path.join(os.tmpdir(), `in-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
   const buf = await downloadMediaMessage(target, "buffer", {}, {
@@ -210,17 +257,19 @@ async function handleLinkSticker(sock, msg, mode, link) {
     for (const url of urls) {
       let input;
       let output;
+      let audio;
       try {
         input = await downloadMedia(url);
+        if (isVideo) audio = await extractStickerAudio(input);
         output = isVideo
           ? await videoToSticker(input, { mode })
           : await imageToSticker(input, { mode });
         const webp = await fs.readFile(output);
-        await sock.sendMessage(chat, { sticker: webp }, { quoted: msg });
+        await sendSticker(sock, chat, webp, msg, audio);
         const usage = await registerUse(sender);
         log.info({ sender, used: usage.used, video: isVideo, source: "x" }, "figurinha enviada");
       } finally {
-        await cleanup(input, output);
+        await cleanup(input, output, audio);
       }
     }
   });
@@ -296,8 +345,10 @@ async function handleSticker(sock, msg, mode) {
   const { position, run } = enqueue(async () => {
     let input;
     let output;
+    let audio;
     try {
       input = await downloadToTemp(sock, target);
+      if (isVideo) audio = await extractStickerAudio(input);
       output = isVideo
         ? await videoToSticker(input, { mode: videoMode })
         : await imageToSticker(input, { mode: imageMode });
@@ -305,11 +356,11 @@ async function handleSticker(sock, msg, mode) {
       if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
         groupCache.set(chat, await sock.groupMetadata(chat));
       }
-      await sock.sendMessage(chat, { sticker: webp }, { quoted: msg });
+      await sendSticker(sock, chat, webp, msg, audio);
       const usage = await registerUse(sender);
       log.info({ sender, used: usage.used, video: isVideo }, "figurinha enviada");
     } finally {
-      await cleanup(input, output);
+      await cleanup(input, output, audio);
     }
   });
 

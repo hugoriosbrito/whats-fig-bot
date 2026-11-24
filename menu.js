@@ -7,7 +7,7 @@ const CATEGORIES = [
     title: "Figurinhas",
     body: `*Figurinhas*
 
-*!fig* — manda a foto ou o vídeo com essa legenda.
+*!fig* — manda a foto ou o vídeo com essa legenda. Vídeo com som vira figurinha com áudio.
 *!fig fit* — cabe inteira.
 *!fig fill* — preenche e corta a borda.
 *!fig stretch* — estica.
@@ -115,7 +115,7 @@ export function menuCategory(name, admin) {
 export const HELP = `Como funciona:
 
 - Manda *!menu* e escolhe uma categoria, ou aperta um botão.
-- Foto com *!fig* vira figurinha. Vídeo curto também.
+- Foto com *!fig* vira figurinha. Vídeo curto também, e o som vai junto.
 - *!fig top* e *!fig bottom* cortam pela ponta.
 - *!tts seu texto* vira uma mensagem de voz.
 - Cada número tem ${config.dailyLimit} figurinhas por dia.
