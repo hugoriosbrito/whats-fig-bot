@@ -42,7 +42,7 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
 const STICKER_BYTES = 500 * 1024;
 // Espaço reservado para o clipe de trabalho. O original é apagado em seguida.
 const CLIP_BYTES = 2 * 1024 * 1024;
-const LEFTOVER = /^(?:fig(?:cut|vid|som)?|in|x)-\d/;
+const LEFTOVER = /^(?:fig(?:cut|vid|som)?|in|x|ig)-\d/;
 
 function videoFilter(mode, fps, size = 512) {
   const frame = `fps=${fps},scale='min(${size},iw)':-2,setsar=1`;

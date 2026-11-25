@@ -4,6 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { config } from "./config.js";
+import { igLinkOf } from "./instagram.js";
 import { assertSizeOk } from "./sticker.js";
 
 const HOSTS = new Set(["x.com", "twitter.com", "mobile.twitter.com", "mobile.x.com"]);
@@ -13,7 +14,15 @@ export function xLinkOf(text) {
   const match = String(text || "").match(
     /https?:\/\/(?:mobile\.)?(?:twitter|x)\.com\/(?:i\/web\/|[^/\s]+\/)?status(?:es)?\/(\d+)/i
   );
-  return match ? { url: match[0], id: match[1] } : null;
+  return match ? { source: "x", url: match[0], id: match[1] } : null;
+}
+
+export function socialLinkOf(text) {
+  const x = xLinkOf(text);
+  const ig = igLinkOf(text);
+  if (!x) return ig;
+  if (!ig) return x;
+  return String(text).indexOf(x.url) <= String(text).indexOf(ig.url) ? x : ig;
 }
 
 function mp4Variants(item) {
@@ -108,34 +117,48 @@ export async function resolveXVideo(link) {
   return media;
 }
 
-function extensionOf(url) {
+const BROWSER = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+
+function mediaHost(hostname) {
+  if (hostname.endsWith("twimg.com")) return { prefix: "x", name: "X" };
+  if (hostname.endsWith("cdninstagram.com") || hostname.endsWith("fbcdn.net")) {
+    return { prefix: "ig", name: "Instagram" };
+  }
+  return null;
+}
+
+function extensionOf(url, type = "") {
   const name = new URL(url).pathname.split(".").pop()?.toLowerCase();
-  return ["jpg", "jpeg", "png", "webp"].includes(name) ? name : "mp4";
+  if (["jpg", "jpeg", "png", "webp", "mp4"].includes(name)) return name;
+  if (type.includes("png")) return "png";
+  if (type.includes("webp")) return "webp";
+  if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+  return "mp4";
 }
 
 export async function downloadMedia(url) {
   const target = new URL(url);
-  if (target.protocol !== "https:" || !target.hostname.endsWith("twimg.com")) {
-    throw new Error("A mídia desse post não está disponível para download.");
-  }
-  const tmp = path.join(
-    os.tmpdir(),
-    `x-${Date.now()}-${Math.floor(Math.random() * 1e6)}.${extensionOf(url)}`
-  );
+  const host = target.protocol === "https:" ? mediaHost(target.hostname) : null;
+  if (!host) throw new Error("A mídia desse post não está disponível para download.");
   let response;
   try {
     response = await fetch(target, {
-      headers: { "user-agent": "zap-fig-bot" },
+      headers: host.prefix === "ig"
+        ? { "user-agent": BROWSER, referer: "https://www.instagram.com/" }
+        : { "user-agent": "zap-fig-bot" },
       signal: AbortSignal.timeout(60_000),
       redirect: "follow",
     });
   } catch {
-    await fs.unlink(tmp).catch(() => {});
-    throw new Error("Não consegui baixar a mídia do X.");
+    throw new Error(`Não consegui baixar a mídia do ${host.name}.`);
   }
   if (!response.ok || !response.body) {
-    throw new Error("Não consegui baixar a mídia do X.");
+    throw new Error(`Não consegui baixar a mídia do ${host.name}.`);
   }
+  const tmp = path.join(
+    os.tmpdir(),
+    `${host.prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.${extensionOf(url, response.headers.get("content-type") || "")}`
+  );
   const announced = Number(response.headers.get("content-length") || 0);
   if (announced) assertSizeOk(announced);
   const max = config.maxMediaMB * 1024 * 1024;
@@ -154,7 +177,7 @@ export async function downloadMedia(url) {
   } catch (error) {
     await fs.unlink(tmp).catch(() => {});
     throw error.code === "ABORT_ERR"
-      ? new Error("O download da mídia do X demorou demais.")
+      ? new Error(`O download da mídia do ${host.name} demorou demais.`)
       : error;
   }
   return tmp;

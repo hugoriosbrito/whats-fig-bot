@@ -19,7 +19,8 @@ import { markSoundSticker, rememberSound } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
-import { downloadMedia, resolveXMedia, xLinkOf } from "./link.js";
+import { resolveIgMedia } from "./instagram.js";
+import { downloadMedia, resolveXMedia, socialLinkOf } from "./link.js";
 import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
 import { HELP, menuCategory, menuHome } from "./menu.js";
 import { buttonContent } from "./buttons.js";
@@ -244,21 +245,26 @@ async function handleLinkSticker(sock, msg, mode, link) {
     return;
   }
 
+  const place = link.source === "ig" ? "Instagram" : "X";
   let media;
   try {
-    media = await resolveXMedia(link);
+    media = link.source === "ig" ? await resolveIgMedia(link) : await resolveXMedia(link);
   } catch (error) {
     await sendText(sock, chat, error.message, msg);
     return;
   }
-  const isVideo = media.kind !== "photo";
-  const urls = isVideo ? [media.url] : media.urls;
+  const items = media.items || (media.kind === "photo"
+    ? media.urls.map((url) => ({ kind: "photo", url }))
+    : [{ kind: media.kind, url: media.url, alternates: media.alternates, seconds: media.seconds }]);
+  const videos = items.filter((item) => item.kind !== "photo");
+  const allPhotos = videos.length === 0;
   const room = quota.limit - quota.used;
-  if (urls.length > room) {
+  if (items.length > room) {
+    const noun = allPhotos ? "fotos" : "mídias";
     await sendText(
       sock,
       chat,
-      `Esse post tem ${urls.length} fotos e você só tem *${room}* figurinha(s) hoje.`,
+      `Esse post tem ${items.length} ${noun} e você só tem *${room}* figurinha(s) hoje.`,
       msg
     );
     return;
@@ -269,12 +275,13 @@ async function handleLinkSticker(sock, msg, mode, link) {
     if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
       groupCache.set(chat, await sock.groupMetadata(chat));
     }
-    for (const url of urls) {
+    for (const item of items) {
+      const isVideo = item.kind !== "photo";
       let input;
       let output;
       let audio;
       try {
-        const sources = isVideo ? [url, ...(media.alternates || [])] : [url];
+        const sources = isVideo ? [item.url, ...(item.alternates || [])] : [item.url];
         for (const source of sources) {
           await cleanup(input, audio);
           input = await downloadMedia(source);
@@ -287,7 +294,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
           if (audio || !isVideo) break;
         }
         output = isVideo
-          ? await videoToSticker(input, { mode, seconds: clipSpan(media.seconds) })
+          ? await videoToSticker(input, { mode, seconds: clipSpan(item.seconds) })
           : await imageToSticker(input, { mode });
         const webp = await fs.readFile(output);
         await cleanup(input, output);
@@ -295,7 +302,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
         output = undefined;
         await sendSticker(sock, chat, webp, msg, audio);
         const usage = await registerUse(sender);
-        log.info({ sender, used: usage.used, video: isVideo, source: "x" }, "figurinha enviada");
+        log.info({ sender, used: usage.used, video: isVideo, source: link.source || "x" }, "figurinha enviada");
       } finally {
         await cleanup(input, output, audio);
       }
@@ -303,18 +310,21 @@ async function handleLinkSticker(sock, msg, mode, link) {
   });
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
-  const what = isVideo ? "o vídeo" : urls.length > 1 ? `as ${urls.length} fotos` : "a foto";
-  await sendText(sock, chat, `Baixando ${what} do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(media.seconds) : ""}${borderNote(isVideo, mode)}`, msg);
+  const what = items.length > 1
+    ? (allPhotos ? `as ${items.length} fotos` : `as ${items.length} mídias`)
+    : (allPhotos ? "a foto" : "o vídeo");
+  const span = videos.reduce((max, item) => Math.max(max, Number(item.seconds) || 0), 0);
+  await sendText(sock, chat, `Baixando ${what} do ${place} e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${videos.length ? clipNote(span) : ""}${borderNote(videos.length > 0, mode)}`, msg);
   try {
     await run;
   } catch (error) {
-    log.error({ err: error }, "falha ao criar figurinha do X");
+    log.error({ err: error }, `falha ao criar figurinha do ${place}`);
     await sendText(sock, chat, `Não consegui converter: ${error.message}`, msg);
   }
 }
 
 async function handleSticker(sock, msg, mode) {
-  // Sem modo explícito: foto e link do X cabem inteiros (fit).
+  // Sem modo explícito: foto e link do X ou do Instagram cabem inteiros (fit).
   // Vídeo enviado no WhatsApp continua preenchendo (fill).
   const imageMode = mode || "fit";
   const videoMode = mode || "fill";
@@ -355,12 +365,12 @@ async function handleSticker(sock, msg, mode) {
   }
 
   if (!target) {
-    const link = xLinkOf(extractBody(msg));
+    const link = socialLinkOf(extractBody(msg));
     if (link) {
       await handleLinkSticker(sock, msg, linkMode, link);
       return;
     }
-    await sendText(sock, chat, `Manda uma foto ou um vídeo com a legenda *!fig*, responde uma mídia com *!fig*, ou manda *!fig* com um link de foto, vídeo ou GIF do X.\n\n${HELP}`, msg);
+    await sendText(sock, chat, `Manda uma foto ou um vídeo com a legenda *!fig*, responde uma mídia com *!fig*, ou manda *!fig* com um link de foto, vídeo ou GIF do X ou do Instagram.\n\n${HELP}`, msg);
     return;
   }
 
