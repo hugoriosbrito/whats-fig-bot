@@ -54,6 +54,97 @@ function videoFilter(mode, fps) {
   return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512`;
 }
 
+// ~90 quadros cabem nos 500 KB. Vídeo curto fica mais fluido; 15s começa em 6 fps.
+function fpsLadder(seconds) {
+  const span = Math.min(config.maxVideoSeconds, Math.max(1, Number(seconds) || config.maxVideoSeconds));
+  const first = Math.max(6, Math.min(15, Math.round(90 / span)));
+  const steps = [first];
+  for (const fps of [8, 6, 4]) {
+    if (fps < steps.at(-1)) steps.push(fps);
+  }
+  return steps;
+}
+
+function runCut(inputPath, out, seconds, { copy, audio = true } = {}) {
+  return new Promise((resolve, reject) => {
+    const args = ["-y", "-threads", "1", "-t", String(seconds), "-i", inputPath, "-map", "0:v:0"];
+    if (audio) args.push("-map", "0:a:0?");
+    if (copy) {
+      args.push("-c", "copy", "-avoid_negative_ts", "make_zero");
+    } else {
+      args.push(
+        "-filter_threads", "1",
+        "-vf", "scale='min(512,iw)':-2",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "28",
+        "-pix_fmt", "yuv420p",
+      );
+      args.push(...(audio ? ["-c:a", "aac", "-b:a", "64k", "-ac", "1"] : ["-an"]));
+    }
+    args.push("-movflags", "+faststart", out);
+
+    const ffmpeg = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    const timer = setTimeout(() => {
+      ffmpeg.kill();
+      reject(new Error("O corte do vídeo demorou demais."));
+    }, copy ? 45_000 : 120_000);
+    let errorText = "";
+    ffmpeg.stderr.on("data", (chunk) => {
+      errorText = `${errorText}${chunk}`.slice(-4000);
+    });
+    ffmpeg.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error.code === "ENOENT"
+        ? new Error("FFmpeg não está instalado neste servidor.")
+        : error);
+    });
+    ffmpeg.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const failure = new Error("Não consegui cortar esse vídeo.");
+        if (/matches no streams|does not contain any stream|Stream specifier/i.test(errorText)) failure.noAudio = true;
+        reject(failure);
+        return;
+      }
+      resolve(out);
+    });
+  });
+}
+
+// Corta o começo do vídeo e devolve um clipe curto. A figurinha sai desse
+// arquivo, sem recusar vídeo longo e sem converter o arquivo inteiro.
+export async function cutVideo(inputPath) {
+  const seconds = config.maxVideoSeconds;
+  const out = path.join(os.tmpdir(), `figcut-${Date.now()}-${Math.floor(Math.random() * 1e6)}.mp4`);
+  const missingFfmpeg = (error) => error?.code === "ENOENT" || /FFmpeg não está instalado/.test(error?.message || "");
+
+  try {
+    await runCut(inputPath, out, seconds, { copy: true });
+    if ((await fs.stat(out)).size < 1024) throw new Error("corte vazio");
+    return out;
+  } catch (error) {
+    await cleanup(out);
+    if (missingFfmpeg(error)) throw error;
+  }
+
+  try {
+    await runCut(inputPath, out, seconds, { copy: false, audio: true });
+    return out;
+  } catch (error) {
+    await cleanup(out);
+    if (missingFfmpeg(error) || !error.noAudio) throw error;
+  }
+
+  try {
+    await runCut(inputPath, out, seconds, { copy: false, audio: false });
+    return out;
+  } catch (error) {
+    await cleanup(out);
+    throw error;
+  }
+}
+
 function runFfmpeg(inputPath, out, mode, fps) {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", [
@@ -61,7 +152,7 @@ function runFfmpeg(inputPath, out, mode, fps) {
       "-threads", "1",
       "-filter_threads", "1",
       "-i", inputPath,
-      "-t", String(Math.min(config.maxVideoSeconds, 6)),
+      "-t", String(config.maxVideoSeconds),
       "-vf", videoFilter(mode, fps),
       "-c:v", "libwebp_anim",
       "-loop", "0",
@@ -97,9 +188,8 @@ function runFfmpeg(inputPath, out, mode, fps) {
   });
 }
 
-// O WhatsApp toca no máximo 10s de áudio numa figurinha, e a figurinha
-// feita de vídeo leva os 5 primeiros segundos do som original.
-const SOUND_SECONDS = 5;
+// O áudio acompanha o mesmo trecho cortado do vídeo.
+const SOUND_SECONDS = config.maxVideoSeconds;
 
 function runAudio(inputPath, out) {
   return new Promise((resolve, reject) => {
@@ -165,8 +255,8 @@ export async function extractStickerAudio(inputPath) {
 }
 
 // Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.
-export async function videoToSticker(inputPath, { mode = "fit" } = {}) {
-  const fpsSteps = [15, 12, 10, 8, 6];
+export async function videoToSticker(inputPath, { mode = "fit", seconds } = {}) {
+  const fpsSteps = fpsLadder(seconds);
   for (const fps of fpsSteps) {
     const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${fps}.webp`);
     try {

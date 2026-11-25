@@ -8,7 +8,7 @@ Mande no privado:
 
 - `!menu` mostra as categorias. O número ou `!menu jogos` abre uma delas
 - foto com a legenda `!fig` vira figurinha inteira (`fit`)
-- vídeo de até 10 segundos com `!fig` vira figurinha animada. Se o vídeo tem som, a figurinha sai com os 5 primeiros segundos de áudio
+- vídeo com `!fig` vira figurinha animada de até 15 segundos. Se for mais longo, o bot corta e usa o começo. O som desse trecho vai junto
 - `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Vídeo com som vira figurinha com áudio. Um post com várias fotos vira uma figurinha por foto
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
@@ -94,7 +94,7 @@ Estas variáveis são opcionais e vão no arquivo `.env` na raiz do projeto, uma
 - `ADMIN_NUMBERS` números do admin, só dígitos, separados por vírgula. Ex: `5511999998888,5511888887777`
 - `COOLDOWN_SECONDS` padrão `10`
 - `MAX_MEDIA_MB` padrão `16`
-- `MAX_VIDEO_SECONDS` padrão `10`
+- `MAX_VIDEO_SECONDS` padrão `15`
 - `DATABASE_URL` conexão MySQL para sessão e cota diária
 - `FISH_API_KEY` chave da Fish Audio (sem ela o `!tts` fica desligado)
 - `FISH_VOICE_ID` id da voz a usar; vazio usa a voz padrão da conta

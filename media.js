@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { config } from "./config.js";
 
 function run(args, out) {
   return new Promise((resolve, reject) => {
@@ -35,7 +36,7 @@ export async function toMp3(input) {
 
 export async function toMp4(input) {
   const out = path.join(os.tmpdir(), `video-${Date.now()}.mp4`);
-  await run(["-i", input, "-an", "-vf", "scale=512:-2", "-t", "10", "-movflags", "+faststart"], out);
+  await run(["-i", input, "-an", "-vf", "scale=512:-2", "-t", String(config.maxVideoSeconds), "-movflags", "+faststart"], out);
   return out;
 }
 

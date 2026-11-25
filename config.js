@@ -17,8 +17,8 @@ export const config = {
   // mídia é processada via stream em disco, nunca inteira na memória.
   maxMediaMB: Number(process.env.MAX_MEDIA_MB || 16),
 
-  // Duração máxima de vídeo aceita para virar figurinha animada (segundos)
-  maxVideoSeconds: Number(process.env.MAX_VIDEO_SECONDS || 10),
+  // Duração máxima da figurinha animada (segundos). Vídeo mais longo é cortado.
+  maxVideoSeconds: Number(process.env.MAX_VIDEO_SECONDS || 15),
 
   // Onde a sessão do WhatsApp é salva (precisa persistir no disco do servidor)
   sessionDir: process.env.SESSION_DIR || "session",

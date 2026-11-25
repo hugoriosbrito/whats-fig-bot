@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
-import { imageToSticker, videoToSticker, extractStickerAudio, assertSizeOk, cleanup } from "./sticker.js";
+import { imageToSticker, videoToSticker, cutVideo, extractStickerAudio, assertSizeOk, cleanup } from "./sticker.js";
 import { markSoundSticker, rememberSound } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
@@ -138,7 +138,7 @@ async function audioSeconds(file) {
   try {
     const { parseFile } = await import("music-metadata");
     const { format } = await parseFile(file, { duration: true });
-    return Math.min(10, Math.max(1, Math.round(format.duration || 1)));
+    return Math.min(config.maxVideoSeconds, Math.max(1, Math.round(format.duration || 1)));
   } catch {
     return 1;
   }
@@ -214,6 +214,16 @@ function enqueue(task) {
   return { position, run };
 }
 
+function clipSpan(seconds) {
+  const value = Number(seconds) || 0;
+  if (value <= 0) return config.maxVideoSeconds;
+  return Math.min(value, config.maxVideoSeconds);
+}
+
+function clipNote(seconds) {
+  return Number(seconds) > config.maxVideoSeconds ? ` Uso os primeiros ${config.maxVideoSeconds}s.` : "";
+}
+
 async function handleLinkSticker(sock, msg, mode, link) {
   const chat = msg.key.remoteJid;
   const sender = senderOf(msg);
@@ -236,15 +246,6 @@ async function handleLinkSticker(sock, msg, mode, link) {
     return;
   }
   const isVideo = media.kind !== "photo";
-  if (isVideo && media.seconds > config.maxVideoSeconds) {
-    await sendText(
-      sock,
-      chat,
-      `Esse vídeo tem ${Math.ceil(media.seconds)}s. O máximo para figurinha animada é ${config.maxVideoSeconds}s.`,
-      msg
-    );
-    return;
-  }
   const urls = isVideo ? [media.url] : media.urls;
   const room = quota.limit - quota.used;
   if (urls.length > room) {
@@ -270,11 +271,16 @@ async function handleLinkSticker(sock, msg, mode, link) {
         for (const source of sources) {
           await cleanup(input, audio);
           input = await downloadMedia(source);
-          audio = isVideo ? await extractStickerAudio(input) : null;
+          if (isVideo) {
+            const clip = await cutVideo(input);
+            await cleanup(input);
+            input = clip;
+            audio = await extractStickerAudio(input);
+          }
           if (audio || !isVideo) break;
         }
         output = isVideo
-          ? await videoToSticker(input, { mode })
+          ? await videoToSticker(input, { mode, seconds: clipSpan(media.seconds) })
           : await imageToSticker(input, { mode });
         const webp = await fs.readFile(output);
         await sendSticker(sock, chat, webp, msg, audio);
@@ -288,7 +294,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
   const what = isVideo ? "o vídeo" : urls.length > 1 ? `as ${urls.length} fotos` : "a foto";
-  await sendText(sock, chat, `Baixando ${what} do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+  await sendText(sock, chat, `Baixando ${what} do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(media.seconds) : ""}`, msg);
   try {
     await run;
   } catch (error) {
@@ -349,10 +355,6 @@ async function handleSticker(sock, msg, mode) {
   }
 
   const seconds = Number(directVideo?.seconds || quoted?.quotedMessage?.videoMessage?.seconds || 0);
-  if (isVideo && seconds > config.maxVideoSeconds) {
-    await sendText(sock, chat, `Esse vídeo tem ${seconds}s. O máximo para figurinha animada é ${config.maxVideoSeconds}s.`, msg);
-    return;
-  }
 
   const { position, run } = enqueue(async () => {
     let input;
@@ -360,9 +362,14 @@ async function handleSticker(sock, msg, mode) {
     let audio;
     try {
       input = await downloadToTemp(sock, target);
-      if (isVideo) audio = await extractStickerAudio(input);
+      if (isVideo) {
+        const clip = await cutVideo(input);
+        await cleanup(input);
+        input = clip;
+        audio = await extractStickerAudio(input);
+      }
       output = isVideo
-        ? await videoToSticker(input, { mode: videoMode })
+        ? await videoToSticker(input, { mode: videoMode, seconds: clipSpan(seconds) })
         : await imageToSticker(input, { mode: imageMode });
       const webp = await fs.readFile(output);
       if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
@@ -377,7 +384,7 @@ async function handleSticker(sock, msg, mode) {
   });
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
-  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}`, msg);
+  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(seconds) : ""}`, msg);
   try {
     await run;
   } catch (error) {
