@@ -250,6 +250,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
   try {
     media = link.source === "ig" ? await resolveIgMedia(link) : await resolveXMedia(link);
   } catch (error) {
+    log.error({ err: error, source: link.source || "x" }, "falha ao abrir o link");
     await sendText(sock, chat, error.message, msg);
     return;
   }

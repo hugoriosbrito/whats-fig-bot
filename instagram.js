@@ -1,6 +1,9 @@
 // O post público devolve o arquivo original do Instagram.
 // Site de "baixar vídeo" reencoda, corta e mete marca d'água.
+// A API GraphQL recusa o bot. O HTML que o crawler do Facebook recebe
+// traz video_versions e image_versions2 do arquivo original.
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
+const CRAWLER = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)";
 const DOC_ID = "27128499623469141";
 const APP_ID = "936619743392459";
 const KINDS = new Set(["p", "reel", "reels", "tv"]);
@@ -66,6 +69,15 @@ export function pickIgPhoto(candidates) {
   return (enough[0] || ranked.at(-1)).url;
 }
 
+function durationOf(slide) {
+  const direct = Number(slide?.video_duration) || 0;
+  if (direct) return direct;
+  const dash = String(slide?.video_dash_manifest || "");
+  const match = dash.match(/mediaPresentationDuration="PT(?:(\d+)H)?(?:(\d+)M)?([\d.]+)S"/);
+  if (!match) return 0;
+  return (Number(match[1]) || 0) * 3600 + (Number(match[2]) || 0) * 60 + (Number(match[3]) || 0);
+}
+
 export function pickIgItems(post) {
   const slides = post?.carousel_media?.length ? post.carousel_media : [post];
   const items = [];
@@ -76,8 +88,8 @@ export function pickIgItems(post) {
     if (isVideo) {
       const video = pickIgVideo(versions);
       if (!video) continue;
-      const own = Number(slide.video_duration) || 0;
-      const fallback = slides.length === 1 ? Number(post?.video_duration) || 0 : 0;
+      const own = durationOf(slide);
+      const fallback = slides.length === 1 ? durationOf(post) : 0;
       items.push({ kind: "video", ...video, seconds: own || fallback });
       continue;
     }
@@ -85,6 +97,52 @@ export function pickIgItems(post) {
     if (photo) items.push({ kind: "photo", url: photo });
   }
   return items;
+}
+
+function findPost(node, shortcode, depth = 0) {
+  if (!node || typeof node !== "object" || depth > 40) return null;
+  if (!Array.isArray(node) && node.code === shortcode && (node.video_versions || node.image_versions2 || node.carousel_media)) {
+    return node;
+  }
+  for (const value of Object.values(node)) {
+    const found = findPost(value, shortcode, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function postFromHtml(html, shortcode) {
+  const scripts = [...String(html || "").matchAll(/<script type="application\/json"[^>]*>([\s\S]*?)<\/script>/g)];
+  for (const script of scripts) {
+    let data;
+    try {
+      data = JSON.parse(script[1]);
+    } catch {
+      continue;
+    }
+    const post = findPost(data, shortcode);
+    if (post) return post;
+  }
+  return null;
+}
+
+async function loadFromPage(url, shortcode) {
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "user-agent": CRAWLER,
+        accept: "text/html",
+        "accept-language": "en-US,en;q=0.8",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok) return null;
+  return postFromHtml(await response.text(), shortcode);
 }
 
 function cookieValue(cookies, name) {
@@ -197,7 +255,17 @@ export async function resolveIgMedia(link) {
   const parsed = typeof link === "string" ? igLinkOf(link) : link;
   if (!parsed?.url) throw new Error("Esse link não é de um post do Instagram.");
   const shortcode = parsed.shortcode || await shortcodeFromShare(parsed.url);
-  const post = await loadPost(shortcode);
+  const pages = [
+    parsed.url,
+    `https://www.instagram.com/reel/${shortcode}/`,
+    `https://www.instagram.com/p/${shortcode}/`,
+  ];
+  let post = null;
+  for (const page of pages) {
+    post = await loadFromPage(page, shortcode);
+    if (post) break;
+  }
+  if (!post) post = await loadPost(shortcode);
   const items = pickIgItems(post);
   if (!items.length) throw new Error("Esse post não tem foto nem vídeo.");
   return { items };

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { igLinkOf, pickIgItems, pickIgPhoto, pickIgVideo, shortcodeOf } from "../instagram.js";
+import { igLinkOf, pickIgItems, pickIgPhoto, pickIgVideo, postFromHtml, shortcodeOf } from "../instagram.js";
 import { socialLinkOf, xLinkOf } from "../link.js";
 
 test("reconhece post, reel, reels e tv do Instagram", () => {
@@ -84,6 +84,26 @@ test("carrossel vira foto e vídeo, e capa de vídeo não vira foto", () => {
       seconds: 8,
     },
   ]);
+});
+
+test("o HTML do crawler entrega o vídeo original do reel", () => {
+  const html = `<html><script type="application/json">{"require":[{"code":"Dfxmxv4BFis","media_type":2,"video_duration":9,"has_audio":true,"video_versions":[{"url":"https://instagram.example.fna.fbcdn.net/clip.mp4","width":720,"type":101}],"image_versions2":{"candidates":[{"url":"https://instagram.example.fna.fbcdn.net/capa.jpg","width":720}]}}]}</script></html>`;
+  const items = pickIgItems(postFromHtml(html, "Dfxmxv4BFis"));
+  assert.deepEqual(items, [{
+    kind: "video",
+    url: "https://instagram.example.fna.fbcdn.net/clip.mp4",
+    alternates: [],
+    seconds: 9,
+  }]);
+});
+
+test("a duração sai do manifesto quando o post não manda video_duration", () => {
+  const items = pickIgItems({
+    media_type: 2,
+    video_dash_manifest: 'mediaPresentationDuration="PT9.366667S"',
+    video_versions: [{ url: "https://instagram.example.fna.fbcdn.net/clip.mp4" }],
+  });
+  assert.equal(items[0].seconds, 9.366667);
 });
 
 test("vídeo sem largura usa a primeira versão que o Instagram mandou", () => {
