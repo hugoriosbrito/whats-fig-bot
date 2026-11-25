@@ -25,6 +25,24 @@ export function socialLinkOf(text) {
   return String(text).indexOf(x.url) <= String(text).indexOf(ig.url) ? x : ig;
 }
 
+export function videoLinkPlan(source, item) {
+  if (source === "ig") {
+    // O Instagram informa se o vídeo tem som. Sem som, uma versão só resolve.
+    // Com som, as outras versões ficam de reserva: a escolhida pode vir muda.
+    const audio = item.hasAudio !== false;
+    return {
+      sources: audio ? [item.url, ...(item.alternates || [])] : [item.url],
+      cut: false,
+      audio,
+    };
+  }
+  return {
+    sources: [item.url, ...(item.alternates || [])],
+    cut: true,
+    audio: true,
+  };
+}
+
 function mp4Variants(item) {
   const formats = item?.formats || [];
   const variants = item?.variants || [];
@@ -77,6 +95,8 @@ export function pickVideo(tweet) {
     alternates,
     seconds: Number(item.duration) || 0,
     kind: item.type,
+    width: Number(item.width) || 0,
+    height: Number(item.height) || 0,
   };
 }
 

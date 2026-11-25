@@ -14,13 +14,13 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
-import { imageToSticker, videoToSticker, cutVideo, extractStickerAudio, assertSizeOk, cleanup, prepareDisk } from "./sticker.js";
+import { borderNote, imageToSticker, videoToSticker, cutVideo, extractStickerAudio, assertSizeOk, cleanup, prepareDisk } from "./sticker.js";
 import { markSoundSticker, rememberSound } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
 import { resolveIgMedia } from "./instagram.js";
-import { downloadMedia, resolveXMedia, socialLinkOf } from "./link.js";
+import { downloadMedia, resolveXMedia, socialLinkOf, videoLinkPlan } from "./link.js";
 import { prepareVoice, prepareVoiceFromOpus, ttsTextFrom, validateTtsText } from "./voice.js";
 import { HELP, menuCategory, menuHome } from "./menu.js";
 import { buttonContent } from "./buttons.js";
@@ -225,12 +225,6 @@ function clipNote(seconds) {
   return Number(seconds) > config.maxVideoSeconds ? ` Uso os primeiros ${config.maxVideoSeconds}s.` : "";
 }
 
-function borderNote(isVideo, mode) {
-  if (mode !== "fit") return "";
-  const piece = isVideo ? "Esse vídeo vai sair com bordas pretas." : "Essa figurinha vai sair com bordas pretas.";
-  return ` ${piece} Se quiser ajustar, manda de novo com *!fig fill*, *!fig stretch*, *!fig top* ou *!fig bottom*.`;
-}
-
 async function handleLinkSticker(sock, msg, mode, link) {
   const chat = msg.key.remoteJid;
   const sender = senderOf(msg);
@@ -247,6 +241,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
 
   const place = link.source === "ig" ? "Instagram" : "X";
   let media;
+  const resolveStarted = Date.now();
   try {
     media = link.source === "ig" ? await resolveIgMedia(link) : await resolveXMedia(link);
   } catch (error) {
@@ -254,9 +249,17 @@ async function handleLinkSticker(sock, msg, mode, link) {
     await sendText(sock, chat, error.message, msg);
     return;
   }
+  log.info({ source: link.source || "x", elapsedMs: Date.now() - resolveStarted }, "post aberto");
   const items = media.items || (media.kind === "photo"
     ? media.urls.map((url) => ({ kind: "photo", url }))
-    : [{ kind: media.kind, url: media.url, alternates: media.alternates, seconds: media.seconds }]);
+    : [{
+      kind: media.kind,
+      url: media.url,
+      alternates: media.alternates,
+      seconds: media.seconds,
+      width: media.width,
+      height: media.height,
+    }]);
   const videos = items.filter((item) => item.kind !== "photo");
   const allPhotos = videos.length === 0;
   const room = quota.limit - quota.used;
@@ -277,22 +280,23 @@ async function handleLinkSticker(sock, msg, mode, link) {
       groupCache.set(chat, await sock.groupMetadata(chat));
     }
     for (const item of items) {
+      const itemStarted = Date.now();
       const isVideo = item.kind !== "photo";
+      const plan = videoLinkPlan(link.source || "x", item);
       let input;
       let output;
       let audio;
       try {
-        const sources = isVideo ? [item.url, ...(item.alternates || [])] : [item.url];
-        for (const source of sources) {
+        for (const source of plan.sources) {
           await cleanup(input, audio);
           input = await downloadMedia(source);
-          if (isVideo) {
+          if (isVideo && plan.cut) {
             const clip = await cutVideo(input);
             await cleanup(input);
             input = clip;
-            audio = await extractStickerAudio(input);
           }
-          if (audio || !isVideo) break;
+          if (isVideo && plan.audio) audio = await extractStickerAudio(input);
+          if (audio || !isVideo || !plan.audio) break;
         }
         output = isVideo
           ? await videoToSticker(input, { mode, seconds: clipSpan(item.seconds) })
@@ -303,7 +307,13 @@ async function handleLinkSticker(sock, msg, mode, link) {
         output = undefined;
         await sendSticker(sock, chat, webp, msg, audio);
         const usage = await registerUse(sender);
-        log.info({ sender, used: usage.used, video: isVideo, source: link.source || "x" }, "figurinha enviada");
+        log.info({
+          sender,
+          used: usage.used,
+          video: isVideo,
+          source: link.source || "x",
+          elapsedMs: Date.now() - itemStarted,
+        }, "figurinha enviada");
       } finally {
         await cleanup(input, output, audio);
       }
@@ -315,7 +325,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
     ? (allPhotos ? `as ${items.length} fotos` : `as ${items.length} mídias`)
     : (allPhotos ? "a foto" : "o vídeo");
   const span = videos.reduce((max, item) => Math.max(max, Number(item.seconds) || 0), 0);
-  await sendText(sock, chat, `Baixando ${what} do ${place} e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${videos.length ? clipNote(span) : ""}${borderNote(videos.length > 0, mode)}`, msg);
+  await sendText(sock, chat, `Baixando ${what} do ${place} e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${videos.length ? clipNote(span) : ""}${borderNote(items, mode)}`, msg);
   try {
     await run;
   } catch (error) {
@@ -409,8 +419,7 @@ async function handleSticker(sock, msg, mode) {
   });
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
-  const chosen = isVideo ? videoMode : imageMode;
-  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(seconds) : ""}${borderNote(isVideo, chosen)}`, msg);
+  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(seconds) : ""}`, msg);
   try {
     await run;
   } catch (error) {

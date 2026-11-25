@@ -76,24 +76,35 @@ test("carrossel vira foto e vídeo, e capa de vídeo não vira foto", () => {
     ],
   });
   assert.deepEqual(items, [
-    { kind: "photo", url: "https://scontent.cdninstagram.com/foto.jpg" },
+    {
+      kind: "photo",
+      url: "https://scontent.cdninstagram.com/foto.jpg",
+      width: 0,
+      height: 0,
+    },
     {
       kind: "video",
       url: "https://scontent.cdninstagram.com/clip.mp4",
       alternates: [],
       seconds: 8,
+      width: 720,
+      height: 0,
+      hasAudio: true,
     },
   ]);
 });
 
 test("o HTML do crawler entrega o vídeo original do reel", () => {
-  const html = `<html><script type="application/json">{"require":[{"code":"Dfxmxv4BFis","media_type":2,"video_duration":9,"has_audio":true,"video_versions":[{"url":"https://instagram.example.fna.fbcdn.net/clip.mp4","width":720,"type":101}],"image_versions2":{"candidates":[{"url":"https://instagram.example.fna.fbcdn.net/capa.jpg","width":720}]}}]}</script></html>`;
+  const html = `<html><script type="application/json">{"require":[{"code":"Dfxmxv4BFis","media_type":2,"video_duration":9,"has_audio":true,"original_width":720,"original_height":720,"video_versions":[{"url":"https://instagram.example.fna.fbcdn.net/clip.mp4","width":720,"type":101}],"image_versions2":{"candidates":[{"url":"https://instagram.example.fna.fbcdn.net/capa.jpg","width":720}]}}]}</script></html>`;
   const items = pickIgItems(postFromHtml(html, "Dfxmxv4BFis"));
   assert.deepEqual(items, [{
     kind: "video",
     url: "https://instagram.example.fna.fbcdn.net/clip.mp4",
     alternates: [],
     seconds: 9,
+    width: 720,
+    height: 720,
+    hasAudio: true,
   }]);
 });
 

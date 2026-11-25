@@ -10,7 +10,7 @@ Mande no privado:
 - foto com a legenda `!fig` vira figurinha inteira (`fit`)
 - vídeo com `!fig` vira figurinha animada de até 15 segundos. Se for mais longo, o bot corta e usa o começo. O som desse trecho vai junto
 - `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Vídeo com som vira figurinha com áudio. Um post com várias fotos vira uma figurinha por foto
-- `!fig` com um link de post ou reel do Instagram (`instagram.com/p`, `/reel`, `/reels` ou `/tv`) baixa o arquivo original do post, sem a marca d'água dos sites de download. Carrossel vira uma figurinha por item. Vídeo com som sai com áudio
+- `!fig` com um link de post ou reel do Instagram (`instagram.com/p`, `/reel`, `/reels` ou `/tv`) baixa o arquivo original do post, sem a marca d'água dos sites de download. Carrossel vira uma figurinha por item. Vídeo com som sai com áudio. Foto com música no Instagram sai só com a imagem: o Instagram não libera a faixa sem sessão
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem

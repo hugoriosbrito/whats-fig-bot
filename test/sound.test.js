@@ -90,6 +90,8 @@ test("vídeo do X guarda as versões mais pesadas para o caso da leve vir muda",
       videos: [{
         type: "video",
         duration: 4.921,
+        width: 1280,
+        height: 720,
         formats: [
           { container: "mp4", bitrate: 632000, url: "https://video.twimg.com/leve.mp4" },
           { container: "mp4", bitrate: 950000, url: "https://video.twimg.com/media.mp4" },
@@ -99,6 +101,8 @@ test("vídeo do X guarda as versões mais pesadas para o caso da leve vir muda",
     },
   });
   assert.equal(media.url, "https://video.twimg.com/leve.mp4");
+  assert.equal(media.width, 1280);
+  assert.equal(media.height, 720);
   assert.deepEqual(media.alternates, [
     "https://video.twimg.com/alta.mp4",
     "https://video.twimg.com/media.mp4",

@@ -78,6 +78,16 @@ function durationOf(slide) {
   return (Number(match[1]) || 0) * 3600 + (Number(match[2]) || 0) * 60 + (Number(match[3]) || 0);
 }
 
+function dimensionOf(slide, post, axis) {
+  const dimensions = slide?.dimensions || post?.dimensions || {};
+  return Number(
+    slide?.[`original_${axis}`] ||
+    dimensions[axis] ||
+    post?.[`original_${axis}`] ||
+    0
+  );
+}
+
 export function pickIgItems(post) {
   const slides = post?.carousel_media?.length ? post.carousel_media : [post];
   const items = [];
@@ -90,11 +100,26 @@ export function pickIgItems(post) {
       if (!video) continue;
       const own = durationOf(slide);
       const fallback = slides.length === 1 ? durationOf(post) : 0;
-      items.push({ kind: "video", ...video, seconds: own || fallback });
+      const version = versions.find((entry) => entry?.url);
+      items.push({
+        kind: "video",
+        ...video,
+        seconds: own || fallback,
+        width: dimensionOf(slide, post, "width") || Number(version?.width) || 0,
+        height: dimensionOf(slide, post, "height") || Number(version?.height) || 0,
+        hasAudio: slide.has_audio ?? post.has_audio ?? true,
+      });
       continue;
     }
     const photo = pickIgPhoto(slide.image_versions2?.candidates);
-    if (photo) items.push({ kind: "photo", url: photo });
+    if (photo) {
+      items.push({
+        kind: "photo",
+        url: photo,
+        width: dimensionOf(slide, post, "width"),
+        height: dimensionOf(slide, post, "height"),
+      });
+    }
   }
   return items;
 }

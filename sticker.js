@@ -60,6 +60,25 @@ function videoFilter(mode, fps, size = 512) {
   return `${frame},scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size},${pad}`;
 }
 
+// Só avisa quando a比例 realmente cria borda no modo fit.
+// Vídeo quadrado não ganha borda; vertical ganha nas laterais;
+// horizontal ganha em cima e embaixo.
+export function borderNote(items, mode) {
+  if (mode !== "fit") return "";
+  const video = (items || []).find((item) => {
+    if (item?.kind === "photo") return false;
+    const width = Number(item?.width) || 0;
+    const height = Number(item?.height) || 0;
+    if (!width || !height) return false;
+    return Math.abs(width - height) / Math.max(width, height) > 0.01;
+  });
+  if (!video) return "";
+  const vertical = Number(video.width) < Number(video.height);
+  const place = vertical ? "laterais" : "em cima e embaixo";
+  const orientation = vertical ? "vertical" : "horizontal";
+  return ` Esse vídeo é ${orientation} e vai sair com bordas vazias ${place}. Se quiser ajustar, manda de novo com *!fig fill*, *!fig stretch*, *!fig top* ou *!fig bottom*.`;
+}
+
 // A primeira tentativa privilegia o movimento. As seguintes cabem nos 500 KB.
 function encodePasses(seconds) {
   const span = Math.min(config.maxVideoSeconds, Math.max(1, Number(seconds) || config.maxVideoSeconds));
