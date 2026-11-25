@@ -39,56 +39,100 @@ export async function imageToSticker(inputPath, { mode = "fit" } = {}) {
   return out;
 }
 
-function videoFilter(mode, fps) {
-  const upright = `fps=${fps},scale='min(512,iw)':-2,setsar=1`;
+const STICKER_BYTES = 500 * 1024;
+// Espaço reservado para o clipe de trabalho. O original é apagado em seguida.
+const CLIP_BYTES = 2 * 1024 * 1024;
+const LEFTOVER = /^(?:fig(?:cut|vid|som)?|in|x)-\d/;
+
+function videoFilter(mode, fps, size = 512) {
+  const frame = `fps=${fps},scale='min(${size},iw)':-2,setsar=1`;
+  const pad = "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000";
   if (mode === "fit") {
-    return `${upright},scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000`;
+    return `${frame},scale=${size}:${size}:force_original_aspect_ratio=decrease,${pad}`;
   }
-  if (mode === "stretch") return `${upright},scale=512:512`;
+  if (mode === "stretch") return `${frame},scale=${size}:${size},${pad}`;
   if (mode === "top") {
-    return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512:0:0`;
+    return `${frame},scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size}:0:0,${pad}`;
   }
   if (mode === "bottom") {
-    return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512:0:ih-512`;
+    return `${frame},scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size}:0:ih-${size},${pad}`;
   }
-  return `${upright},scale=512:512:force_original_aspect_ratio=increase,crop=512:512`;
+  return `${frame},scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size},${pad}`;
 }
 
-// ~90 quadros cabem nos 500 KB. Vídeo curto fica mais fluido; 15s começa em 6 fps.
-function fpsLadder(seconds) {
+// A primeira tentativa privilegia o movimento. As seguintes cabem nos 500 KB.
+function encodePasses(seconds) {
   const span = Math.min(config.maxVideoSeconds, Math.max(1, Number(seconds) || config.maxVideoSeconds));
-  const first = Math.max(6, Math.min(15, Math.round(90 / span)));
-  const steps = [first];
-  for (const fps of [8, 6, 4]) {
-    if (fps < steps.at(-1)) steps.push(fps);
-  }
-  return steps;
+  const fps = Math.max(4, Math.min(12, Math.round(60 / span)));
+  return [
+    { fps, quality: 48, size: 512 },
+    { fps: Math.max(3, fps - 2), quality: 30, size: 512 },
+    { fps: 3, quality: 20, size: 320 },
+    { fps: 2, quality: 15, size: 256 },
+  ];
 }
 
-function runCut(inputPath, out, seconds, { copy, audio = true } = {}) {
-  return new Promise((resolve, reject) => {
-    const args = ["-y", "-threads", "1", "-t", String(seconds), "-i", inputPath, "-map", "0:v:0"];
-    if (audio) args.push("-map", "0:a:0?");
-    if (copy) {
-      args.push("-c", "copy", "-avoid_negative_ts", "make_zero");
-    } else {
-      args.push(
-        "-filter_threads", "1",
-        "-vf", "scale='min(512,iw)':-2",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "28",
-        "-pix_fmt", "yuv420p",
-      );
-      args.push(...(audio ? ["-c:a", "aac", "-b:a", "64k", "-ac", "1"] : ["-an"]));
+// Apaga sobras de uma conversão interrompida e só segue se ainda houver
+// disco para o vídeo e para a figurinha.
+export async function prepareDisk() {
+  const dir = os.tmpdir();
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  let names = [];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    names = [];
+  }
+  await Promise.all(names.map(async (name) => {
+    if (!LEFTOVER.test(name)) return;
+    const full = path.join(dir, name);
+    try {
+      const stat = await fs.stat(full);
+      if (stat.mtimeMs < cutoff) await fs.unlink(full);
+    } catch {
+      /* já foi */
     }
+  }));
+
+  try {
+    const stats = await fs.statfs(dir);
+    const free = Number(stats.bavail) * Number(stats.bsize);
+    const need = (config.maxMediaMB + 12) * 1024 * 1024;
+    if (free < need) {
+      throw new Error("O servidor está sem espaço agora. Tenta de novo daqui a pouco.");
+    }
+  } catch (error) {
+    if (error.message.startsWith("O servidor está sem espaço")) throw error;
+  }
+}
+
+function runCut(inputPath, out, seconds, { audio = true } = {}) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-y", "-threads", "1", "-filter_threads", "1",
+      "-t", String(seconds),
+      "-i", inputPath,
+      "-map", "0:v:0",
+    ];
+    if (audio) args.push("-map", "0:a:0?");
+    args.push(
+      "-vf", "scale='min(512,iw)':-2",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-b:v", "280k",
+      "-maxrate", "280k",
+      "-bufsize", "560k",
+      "-pix_fmt", "yuv420p",
+      "-fs", String(CLIP_BYTES),
+    );
+    args.push(...(audio ? ["-c:a", "aac", "-b:a", "32k", "-ac", "1"] : ["-an"]));
     args.push("-movflags", "+faststart", out);
 
     const ffmpeg = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     const timer = setTimeout(() => {
       ffmpeg.kill();
       reject(new Error("O corte do vídeo demorou demais."));
-    }, copy ? 45_000 : 120_000);
+    }, 120_000);
     let errorText = "";
     ffmpeg.stderr.on("data", (chunk) => {
       errorText = `${errorText}${chunk}`.slice(-4000);
@@ -112,32 +156,25 @@ function runCut(inputPath, out, seconds, { copy, audio = true } = {}) {
   });
 }
 
-// Corta o começo do vídeo e devolve um clipe curto. A figurinha sai desse
-// arquivo, sem recusar vídeo longo e sem converter o arquivo inteiro.
+// Reserva um clipe de no máximo 2 MB. O vídeo original é apagado depois,
+// para a conversão não ficar com os dois arquivos no disco.
 export async function cutVideo(inputPath) {
   const seconds = config.maxVideoSeconds;
   const out = path.join(os.tmpdir(), `figcut-${Date.now()}-${Math.floor(Math.random() * 1e6)}.mp4`);
   const missingFfmpeg = (error) => error?.code === "ENOENT" || /FFmpeg não está instalado/.test(error?.message || "");
 
   try {
-    await runCut(inputPath, out, seconds, { copy: true });
-    if ((await fs.stat(out)).size < 1024) throw new Error("corte vazio");
-    return out;
-  } catch (error) {
-    await cleanup(out);
-    if (missingFfmpeg(error)) throw error;
-  }
-
-  try {
-    await runCut(inputPath, out, seconds, { copy: false, audio: true });
-    return out;
+    await runCut(inputPath, out, seconds, { audio: true });
+    const size = (await fs.stat(out)).size;
+    if (size >= 1024 && size <= CLIP_BYTES * 2) return out;
+    throw new Error("Não consegui cortar esse vídeo.");
   } catch (error) {
     await cleanup(out);
     if (missingFfmpeg(error) || !error.noAudio) throw error;
   }
 
   try {
-    await runCut(inputPath, out, seconds, { copy: false, audio: false });
+    await runCut(inputPath, out, seconds, { audio: false });
     return out;
   } catch (error) {
     await cleanup(out);
@@ -145,7 +182,7 @@ export async function cutVideo(inputPath) {
   }
 }
 
-function runFfmpeg(inputPath, out, mode, fps) {
+function runFfmpeg(inputPath, out, mode, { fps, quality, size }) {
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", [
       "-y",
@@ -153,11 +190,11 @@ function runFfmpeg(inputPath, out, mode, fps) {
       "-filter_threads", "1",
       "-i", inputPath,
       "-t", String(config.maxVideoSeconds),
-      "-vf", videoFilter(mode, fps),
+      "-vf", videoFilter(mode, fps, size),
       "-c:v", "libwebp_anim",
       "-loop", "0",
       "-an",
-      "-q:v", "60",
+      "-q:v", String(quality),
       "-compression_level", "2",
       out,
     ], { stdio: ["ignore", "ignore", "ignore"] });
@@ -179,7 +216,7 @@ function runFfmpeg(inputPath, out, mode, fps) {
         return;
       }
       const stat = await fs.stat(out);
-      if (stat.size > 500 * 1024) {
+      if (stat.size > STICKER_BYTES) {
         reject(Object.assign(new Error("Muito grande."), { code: "STICKER_TOO_LARGE" }));
       } else {
         resolve(out);
@@ -254,16 +291,17 @@ export async function extractStickerAudio(inputPath) {
   }
 }
 
-// Vídeo curto vira WebP animado. O FFmpeg limita duração, tamanho e resolução.
+// Vídeo curto vira WebP animado. Se passar de 500 KB, a próxima tentativa
+// sacrifica quadro e qualidade — o arquivo que não serviu é apagado na hora.
 export async function videoToSticker(inputPath, { mode = "fit", seconds } = {}) {
-  const fpsSteps = fpsLadder(seconds);
-  for (const fps of fpsSteps) {
-    const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${fps}.webp`);
+  const passes = encodePasses(seconds);
+  for (const pass of passes) {
+    const out = path.join(os.tmpdir(), `figvid-${Date.now()}-${pass.fps}.webp`);
     try {
-      return await runFfmpeg(inputPath, out, mode, fps);
+      return await runFfmpeg(inputPath, out, mode, pass);
     } catch (error) {
       await cleanup(out);
-      if (error.code === "STICKER_TIMEOUT" || fps === fpsSteps.at(-1)) throw error;
+      if (error.code === "STICKER_TIMEOUT" || pass === passes.at(-1)) throw error;
       if (error.code !== "STICKER_TOO_LARGE") throw error;
     }
   }

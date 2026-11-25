@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
-import { imageToSticker, videoToSticker, cutVideo, extractStickerAudio, assertSizeOk, cleanup } from "./sticker.js";
+import { imageToSticker, videoToSticker, cutVideo, extractStickerAudio, assertSizeOk, cleanup, prepareDisk } from "./sticker.js";
 import { markSoundSticker, rememberSound } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
@@ -224,6 +224,12 @@ function clipNote(seconds) {
   return Number(seconds) > config.maxVideoSeconds ? ` Uso os primeiros ${config.maxVideoSeconds}s.` : "";
 }
 
+function borderNote(isVideo, mode) {
+  if (mode !== "fit") return "";
+  const piece = isVideo ? "Esse vídeo vai sair com bordas pretas." : "Essa figurinha vai sair com bordas pretas.";
+  return ` ${piece} Se quiser ajustar, manda de novo com *!fig fill*, *!fig stretch*, *!fig top* ou *!fig bottom*.`;
+}
+
 async function handleLinkSticker(sock, msg, mode, link) {
   const chat = msg.key.remoteJid;
   const sender = senderOf(msg);
@@ -259,6 +265,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
   }
 
   const { position, run } = enqueue(async () => {
+    await prepareDisk();
     if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
       groupCache.set(chat, await sock.groupMetadata(chat));
     }
@@ -283,6 +290,9 @@ async function handleLinkSticker(sock, msg, mode, link) {
           ? await videoToSticker(input, { mode, seconds: clipSpan(media.seconds) })
           : await imageToSticker(input, { mode });
         const webp = await fs.readFile(output);
+        await cleanup(input, output);
+        input = undefined;
+        output = undefined;
         await sendSticker(sock, chat, webp, msg, audio);
         const usage = await registerUse(sender);
         log.info({ sender, used: usage.used, video: isVideo, source: "x" }, "figurinha enviada");
@@ -294,7 +304,7 @@ async function handleLinkSticker(sock, msg, mode, link) {
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
   const what = isVideo ? "o vídeo" : urls.length > 1 ? `as ${urls.length} fotos` : "a foto";
-  await sendText(sock, chat, `Baixando ${what} do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(media.seconds) : ""}`, msg);
+  await sendText(sock, chat, `Baixando ${what} do X e fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(media.seconds) : ""}${borderNote(isVideo, mode)}`, msg);
   try {
     await run;
   } catch (error) {
@@ -361,6 +371,7 @@ async function handleSticker(sock, msg, mode) {
     let output;
     let audio;
     try {
+      await prepareDisk();
       input = await downloadToTemp(sock, target);
       if (isVideo) {
         const clip = await cutVideo(input);
@@ -372,6 +383,9 @@ async function handleSticker(sock, msg, mode) {
         ? await videoToSticker(input, { mode: videoMode, seconds: clipSpan(seconds) })
         : await imageToSticker(input, { mode: imageMode });
       const webp = await fs.readFile(output);
+      await cleanup(input, output);
+      input = undefined;
+      output = undefined;
       if (chat.endsWith("@g.us") && !groupCache.has(chat)) {
         groupCache.set(chat, await sock.groupMetadata(chat));
       }
@@ -384,7 +398,8 @@ async function handleSticker(sock, msg, mode) {
   });
 
   const waiting = position > 1 ? ` Você está na posição ${position} da fila.` : "";
-  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(seconds) : ""}`, msg);
+  const chosen = isVideo ? videoMode : imageMode;
+  await sendText(sock, chat, `Fazendo sua figurinha (${quota.used + 1}/${quota.limit} hoje).${waiting}${isVideo ? clipNote(seconds) : ""}${borderNote(isVideo, chosen)}`, msg);
   try {
     await run;
   } catch (error) {

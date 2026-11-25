@@ -70,7 +70,7 @@ Como funciona:
 - texto de voz limitado a 300 caracteres
 - no máximo 16 MB por arquivo
 - vídeos entram numa fila e só um é convertido por vez
-- figurinha animada fica limitada a 500 KB
+- figurinha animada fica limitada a 500 KB. Se não couber, a qualidade baixa até caber. O vídeo é apagado assim que a figurinha fica pronta
 - mensagem sem comando é ignorada
 - espera 0,8 segundo antes de cada resposta
 
