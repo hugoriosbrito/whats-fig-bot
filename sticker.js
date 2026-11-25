@@ -109,7 +109,7 @@ function runAudio(inputPath, out) {
       "-i", inputPath,
       "-t", String(SOUND_SECONDS),
       "-vn",
-      "-map", "0:a:0?",
+      "-map", "0:a:0",
       "-c:a", "libopus",
       "-b:a", "32k",
       "-ac", "1",
@@ -132,6 +132,10 @@ function runAudio(inputPath, out) {
     ffmpeg.on("close", async (code) => {
       clearTimeout(timer);
       if (code !== 0) {
+        if (/matches no streams|does not contain any stream|Stream specifier/i.test(errorText)) {
+          resolve(null);
+          return;
+        }
         reject(new Error("Não consegui tirar o áudio desse vídeo."));
         return;
       }
@@ -145,40 +149,15 @@ function runAudio(inputPath, out) {
   });
 }
 
-function hasAudioTrack(inputPath) {
-  return new Promise((resolve) => {
-    const probe = spawn("ffprobe", [
-      "-v", "error",
-      "-select_streams", "a:0",
-      "-show_entries", "stream=codec_type",
-      "-of", "csv=p=0",
-      inputPath,
-    ], { stdio: ["ignore", "pipe", "ignore"] });
-    let output = "";
-    const timer = setTimeout(() => {
-      probe.kill();
-      resolve(false);
-    }, 15_000);
-    probe.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    probe.on("error", () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-    probe.on("close", () => {
-      clearTimeout(timer);
-      resolve(output.includes("audio"));
-    });
-  });
-}
-
 // Vídeo com som devolve o áudio em Opus. Vídeo mudo devolve null.
+// Não usa ffprobe: no servidor só o ffmpeg é garantido, e sem a checagem
+// o vídeo do X saía mudo.
 export async function extractStickerAudio(inputPath) {
-  if (!(await hasAudioTrack(inputPath))) return null;
   const out = path.join(os.tmpdir(), `figsom-${Date.now()}-${Math.floor(Math.random() * 1e6)}.ogg`);
   try {
-    return await runAudio(inputPath, out);
+    const audio = await runAudio(inputPath, out);
+    if (!audio) await cleanup(out);
+    return audio;
   } catch (error) {
     await cleanup(out);
     throw error;

@@ -8,6 +8,7 @@ import path from "node:path";
 import { proto } from "@whiskeysockets/baileys";
 import { getMediaKeys } from "@whiskeysockets/baileys/lib/Utils/messages-media.js";
 import sharp from "sharp";
+import { pickVideo } from "../link.js";
 import { extractStickerAudio } from "../sticker.js";
 import { markSoundSticker, patchSoundSticker, rememberSound, streamingSidecar } from "../sound.js";
 
@@ -74,6 +75,27 @@ test("a tabela do áudio bate com o arquivo criptografado", async () => {
     .subarray(0, 10);
   assert.deepEqual(sidecar.subarray(0, 10), first);
   assert.deepEqual(sidecar.subarray(10), second);
+});
+
+test("vídeo do X guarda as versões mais pesadas para o caso da leve vir muda", () => {
+  const media = pickVideo({
+    media: {
+      videos: [{
+        type: "video",
+        duration: 4.921,
+        formats: [
+          { container: "mp4", bitrate: 632000, url: "https://video.twimg.com/leve.mp4" },
+          { container: "mp4", bitrate: 950000, url: "https://video.twimg.com/media.mp4" },
+          { container: "mp4", bitrate: 2176000, url: "https://video.twimg.com/alta.mp4" },
+        ],
+      }],
+    },
+  });
+  assert.equal(media.url, "https://video.twimg.com/leve.mp4");
+  assert.deepEqual(media.alternates, [
+    "https://video.twimg.com/alta.mp4",
+    "https://video.twimg.com/media.mp4",
+  ]);
 });
 
 test("vídeo com som devolve áudio e vídeo mudo não devolve", async () => {

@@ -57,8 +57,15 @@ export function pickVideo(tweet) {
   const ranked = [...variants].sort((a, b) => a.bitrate - b.bitrate);
   const lightEnough = ranked.filter((entry) => entry.bitrate <= 900_000);
   const chosen = lightEnough.at(-1) || ranked[0];
+  // A versão leve às vezes vem sem faixa de áudio. As mais pesadas ficam
+  // de reserva para a figurinha sair com o som do vídeo.
+  const alternates = ranked
+    .filter((entry) => entry.url !== chosen.url)
+    .sort((a, b) => b.bitrate - a.bitrate)
+    .map((entry) => entry.url);
   return {
     url: chosen.url,
+    alternates,
     seconds: Number(item.duration) || 0,
     kind: item.type,
   };

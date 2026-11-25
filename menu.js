@@ -15,7 +15,7 @@ const CATEGORIES = [
 *!fig bottom* — corta pela parte de baixo.
 *!emoji* 😀 🔥 — junta dois emojis numa figurinha.
 
-Também vale responder a mídia, ou mandar *!fig* com um link de foto, vídeo ou GIF do X.`,
+Também vale responder a mídia, ou mandar *!fig* com um link de foto, vídeo ou GIF do X. Vídeo com som sai com áudio.`,
   },
   {
     id: "2",

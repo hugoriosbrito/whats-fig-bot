@@ -259,8 +259,13 @@ async function handleLinkSticker(sock, msg, mode, link) {
       let output;
       let audio;
       try {
-        input = await downloadMedia(url);
-        if (isVideo) audio = await extractStickerAudio(input);
+        const sources = isVideo ? [url, ...(media.alternates || [])] : [url];
+        for (const source of sources) {
+          await cleanup(input, audio);
+          input = await downloadMedia(source);
+          audio = isVideo ? await extractStickerAudio(input) : null;
+          if (audio || !isVideo) break;
+        }
         output = isVideo
           ? await videoToSticker(input, { mode })
           : await imageToSticker(input, { mode });

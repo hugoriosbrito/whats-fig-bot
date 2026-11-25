@@ -9,7 +9,7 @@ Mande no privado:
 - `!menu` mostra as categorias. O número ou `!menu jogos` abre uma delas
 - foto com a legenda `!fig` vira figurinha inteira (`fit`)
 - vídeo de até 10 segundos com `!fig` vira figurinha animada. Se o vídeo tem som, a figurinha sai com os 5 primeiros segundos de áudio
-- `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Um post com várias fotos vira uma figurinha por foto
+- `!fig` com um link de foto, vídeo ou GIF do X (`x.com` ou `twitter.com`) baixa o arquivo, faz a figurinha em `fit` e apaga o arquivo logo em seguida. Vídeo com som vira figurinha com áudio. Um post com várias fotos vira uma figurinha por foto
 - responder uma foto ou vídeo com `!fig` também funciona
 - `!fig fill` preenche o quadrado cortando as bordas
 - `!fig stretch` estica a imagem
