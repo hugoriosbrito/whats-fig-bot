@@ -15,7 +15,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import { checkQuota, checkCooldown, isAdmin, phoneOf, registerUse, removeVip, setVip, vipList } from "./limits.js";
 import { imageToSticker, videoToSticker, extractStickerAudio, assertSizeOk, cleanup } from "./sticker.js";
-import { markSoundSticker, patchSoundSticker, rememberSound, uploadStickerAudio } from "./sound.js";
+import { markSoundSticker, rememberSound } from "./sound.js";
 import { hasDatabase, setupDatabase } from "./db.js";
 import { useMysqlAuthState } from "./auth-store.js";
 import { synthesize, ttsEnabled, TtsError } from "./fish.js";
@@ -146,12 +146,20 @@ async function audioSeconds(file) {
 
 async function sendSticker(sock, chat, webp, quote, audioFile) {
   let audio = null;
+  let opus = null;
   if (audioFile) {
     try {
-      audio = await uploadStickerAudio(audioFile, {
-        upload: sock.waUploadToServer,
-        seconds: await audioSeconds(audioFile),
-      });
+      opus = await fs.readFile(audioFile);
+      const preparedAudio = await prepareWAMessageMedia(
+        {
+          audio: opus,
+          mimetype: "audio/ogg; codecs=opus",
+          ptt: false,
+          seconds: await audioSeconds(audioFile),
+        },
+        { upload: sock.waUploadToServer }
+      );
+      audio = preparedAudio.audioMessage;
     } catch (error) {
       log.warn({ err: error }, "figurinha saiu sem o áudio");
     }
@@ -160,7 +168,7 @@ async function sendSticker(sock, chat, webp, quote, audioFile) {
     await sock.sendMessage(chat, { sticker: webp }, { quoted: quote });
     return;
   }
-  webp = await markSoundSticker(webp, await fs.readFile(audioFile));
+  webp = await markSoundSticker(webp, opus);
   const prepared = await prepareWAMessageMedia(
     { sticker: webp, isAnimated: true },
     { upload: sock.waUploadToServer }
@@ -169,12 +177,11 @@ async function sendSticker(sock, chat, webp, quote, audioFile) {
   sticker.isAnimated = true;
   sticker.mimetype = "image/webp";
   sticker.stickerSentTs = Date.now();
-  rememberSound(prepared, audio);
-  patchSoundSticker(prepared);
   const full = generateWAMessageFromContent(chat, prepared, {
     userJid: sock.user?.id,
     quoted: quote,
   });
+  rememberSound(full.message, audio);
   await sock.relayMessage(chat, full.message, { messageId: full.key.id });
 }
 

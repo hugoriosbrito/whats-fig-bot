@@ -10,7 +10,7 @@ import { getMediaKeys } from "@whiskeysockets/baileys/lib/Utils/messages-media.j
 import sharp from "sharp";
 import { pickVideo } from "../link.js";
 import { extractStickerAudio } from "../sticker.js";
-import { markSoundSticker, patchSoundSticker, rememberSound, streamingSidecar } from "../sound.js";
+import { markSoundSticker, rememberSound, streamingSidecar } from "../sound.js";
 
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
@@ -20,7 +20,7 @@ function ffmpeg(args) {
   });
 }
 
-test("o áudio vai no campo 26 da figurinha", () => {
+test("a figurinha com som vai no campo 134, com o campo 24 em zero", () => {
   const message = proto.Message.create({
     stickerMessage: { url: "https://exemplo/figurinha", mimetype: "image/webp", isAnimated: true },
   });
@@ -30,17 +30,24 @@ test("o áudio vai no campo 26 da figurinha", () => {
     seconds: 5,
   });
   rememberSound(message, audio);
-  const encoded = proto.Message.encode(patchSoundSticker(message)).finish();
-  const stickerBytes = readLengthDelimited(encoded, 26);
+  const encoded = proto.Message.encode(message).finish();
+  assert.equal(readLengthDelimited(encoded, 26).length, 0);
+
+  const wrapper = readLengthDelimited(encoded, 134);
+  const inner = readLengthDelimited(wrapper, 1);
+  const stickerBytes = readLengthDelimited(inner, 26);
   const decoded = proto.Message.StickerMessage.decode(stickerBytes);
   assert.equal(decoded.url, "https://exemplo/figurinha");
   assert.equal(decoded.isAnimated, true);
 
   const extra = stickerBytes.subarray(proto.Message.StickerMessage.encode(decoded).finish().length);
+  assert.equal(readVarint(extra, 24), 0);
   const sound = proto.Message.AudioMessage.decode(readLengthDelimited(extra, 26));
   assert.equal(sound.mimetype, "audio/ogg; codecs=opus");
   assert.equal(sound.seconds, 5);
-  assert.equal(readLengthDelimited(encoded, 134).length, 0);
+
+  const plain = proto.Message.encode(proto.Message.create({ conversation: "oi" })).finish();
+  assert.equal(readLengthDelimited(plain, 134).length, 0);
 });
 
 test("o WebP ganha o hash do áudio no EXIF", async () => {

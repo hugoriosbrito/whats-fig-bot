@@ -7,11 +7,6 @@ import webpmux from "node-webpmux";
 
 const CHUNK = 64 * 1024;
 const MAC_LENGTH = 10;
-const AUDIO_FIELD = (26 << 3) | 2;
-
-// O cliente só desenha o ícone de som se o WebP traz "sound-sha256" no EXIF
-// e o StickerMessage traz o AudioMessage no campo 26. O proto do Baileys
-// ainda não declara esse campo, então ele é escrito na hora de enviar.
 
 // Tabela de HMAC que o cliente usa para ir tocando enquanto baixa.
 // São 10 bytes a cada 64 KB do arquivo criptografado, com o IV na frente.
@@ -70,28 +65,70 @@ export async function uploadStickerAudio(file, { upload, seconds }) {
 }
 
 const SOUND = Symbol("sound");
+let encoderInstalled = false;
 
 export function rememberSound(message, audio) {
   if (!message?.stickerMessage || !audio) return;
-  message.stickerMessage[SOUND] = audio;
+  message[SOUND] = audio;
 }
 
-// Escreve o áudio dentro da figurinha, no campo 26, só na cópia criptografada.
-export function patchSoundSticker(message) {
-  const audio = message?.stickerMessage?.[SOUND];
-  if (!audio) return message;
-  delete message.stickerMessage[SOUND];
-  const original = proto.Message.StickerMessage.encode;
-  proto.Message.StickerMessage.encode = function encodeWithAudio(value, writer) {
-    proto.Message.StickerMessage.encode = original;
-    const encoded = original.call(proto.Message.StickerMessage, value, writer);
-    if (value === message.stickerMessage) {
-      proto.Message.AudioMessage.encode(audio, encoded.uint32(AUDIO_FIELD).fork()).ldelim();
-    }
-    return encoded;
-  };
-  return message;
+function fieldVarint(field, value) {
+  const bytes = [];
+  let rest = value;
+  do {
+    let next = rest & 127;
+    rest = Math.floor(rest / 128);
+    if (rest) next |= 128;
+    bytes.push(next);
+  } while (rest);
+  return Buffer.concat([varint((field << 3) | 0), Buffer.from(bytes)]);
 }
+
+function fieldBytes(field, bytes) {
+  return Buffer.concat([varint((field << 3) | 2), varint(bytes.length), Buffer.from(bytes)]);
+}
+
+function varint(value) {
+  const bytes = [];
+  let rest = value;
+  do {
+    let next = rest & 127;
+    rest = Math.floor(rest / 128);
+    if (rest) next |= 128;
+    bytes.push(next);
+  } while (rest);
+  return Buffer.from(bytes);
+}
+
+// O WhatsApp não deixa o áudio no stickerMessage da raiz. A figurinha com som
+// vai no campo 134, e o campo 24 dentro dela é 0. Isso foi conferido enviando
+// e tocando no celular: https://github.com/WhiskeySockets/Baileys/issues/2932
+export function installSoundStickerEncoder() {
+  if (encoderInstalled) return;
+  encoderInstalled = true;
+  const original = proto.Message.encode;
+  proto.Message.encode = function encodeSoundSticker(message, writer) {
+    const audio = message?.[SOUND];
+    const sticker = message?.stickerMessage;
+    if (!audio || !sticker) return original.call(this, message, writer);
+    message.stickerMessage = null;
+    try {
+      const encoded = original.call(this, message, writer);
+      const stickerBytes = Buffer.concat([
+        proto.Message.StickerMessage.encode(sticker).finish(),
+        fieldVarint(24, 0),
+        fieldBytes(26, proto.Message.AudioMessage.encode(audio).finish()),
+      ]);
+      const wrapped = fieldBytes(1, fieldBytes(26, stickerBytes));
+      encoded.uint32((134 << 3) | 2).bytes(wrapped);
+      return encoded;
+    } finally {
+      message.stickerMessage = sticker;
+    }
+  };
+}
+
+installSoundStickerEncoder();
 
 // O ícone de som sai do hash do áudio gravado no EXIF do WebP.
 export async function markSoundSticker(webp, audio) {
